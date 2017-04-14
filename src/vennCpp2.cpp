@@ -9,8 +9,8 @@ void R_init_vennplot(DllInfo* info) {
 	R_useDynamicSymbols(info, TRUE);
 }
 
-void loss(double& gammar, NumericVector& detaloss, 
-          NumericMatrix& xy, int i, 
+void loss(double& gammar, NumericVector& detaloss,
+          NumericMatrix& xy, int i,
           NumericVector& radius, NumericMatrix& ED, bool ThreeD,
           NumericVector& tmp) {
   double detaloss1 = 0.0;
@@ -32,13 +32,13 @@ void loss(double& gammar, NumericVector& detaloss,
       continue;
     }
     else{
-      gammar += pow((X2 -pow(ED(i,j),2)),2);
-      detaloss1 += 4.0*(X2 - pow(ED(i,j),2))*(xy.row(i)[0] - xy.row(j)[0]);
-      detaloss2 += 4.0*(X2 - pow(ED(i,j),2))*(xy.row(i)[1] - xy.row(j)[1]);
+      gammar += std::pow((X2 -std::pow(ED(i,j),2)),2);
+      detaloss1 += 4.0*(X2 - std::pow(ED(i,j),2))*(xy.row(i)[0] - xy.row(j)[0]);
+      detaloss2 += 4.0*(X2 - std::pow(ED(i,j),2))*(xy.row(i)[1] - xy.row(j)[1]);
       if(ThreeD == true){
-        detaloss3 += 4.0*(X2 - pow(ED(i,j),2))*(xy.row(i)[2] - xy.row(j)[2]);}
+        detaloss3 += 4.0*(X2 - std::pow(ED(i,j),2))*(xy.row(i)[2] - xy.row(j)[2]);}
     }
-    
+
   }
   detaloss[0] = detaloss1;
   detaloss[1] = detaloss2;
@@ -49,7 +49,7 @@ void loss(double& gammar, NumericVector& detaloss,
 }
 
 // [[Rcpp::export("lossR")]]
-List loss_R(NumericMatrix xy, int iRow, 
+List loss_R(NumericMatrix xy, int iRow,
             NumericVector radius, NumericMatrix ED, bool ThreeD) {
   double gammar = 0.0;
   int i = iRow-1;
@@ -61,7 +61,7 @@ List loss_R(NumericMatrix xy, int iRow,
 }
 
 void Loss(double& loss2,
-          NumericMatrix& xy,NumericVector& radius, 
+          NumericMatrix& xy,NumericVector& radius,
           NumericMatrix& ED, bool ThreeD){
   int m = xy.nrow();
   NumericVector loss1(m);
@@ -71,7 +71,7 @@ void Loss(double& loss2,
     //loss1[j] = loss(m = m, xy = xy ,j , radius = radius, ED = ED , ThreeD = ThreeD);
     detaloss = xy.row(j);
     loss(loss1[j], detaloss,xy, j, radius, ED, ThreeD, tmp);
-    
+
   }
   loss2 = sum(loss1);
   return;
@@ -87,7 +87,7 @@ double Loss_R(NumericMatrix xy,
 }
 
 // [[Rcpp::export("LoopR")]]
-List loop_R(NumericMatrix xy, double ALPHA, 
+List loop_R(NumericMatrix xy, double ALPHA,
             NumericVector radius, NumericMatrix ED, bool ThreeD) {
   int m = xy.nrow();
   NumericMatrix xy1(clone(xy));
@@ -100,9 +100,9 @@ List loop_R(NumericMatrix xy, double ALPHA,
   for(int i=0;i<m;i++){
     loss(gammar, detax0, xy1, i, radius, ED, ThreeD, tmp);
     detax0 = -detax0;
-    xy1.row(i) = xy.row(i) + ALPHA*detax0; 
+    xy1.row(i) = xy.row(i) + ALPHA*detax0;
   }
-  
+
   double f1 = 0.0;
   double f2 = 0.0;
   Loss(f1, xy1, radius,ED, ThreeD);
@@ -112,7 +112,7 @@ List loop_R(NumericMatrix xy, double ALPHA,
   double betan1 = 0.0;
   double tt = 0.0;
   double ts = 0.0;
-  while(f1>pow(10,-10)){
+  while(f1>std::pow(10,-10)){
     if(xigma == 0){
       for (int i=0;i<m;i++){
         loss(gammar, detaxn,xy1, i, radius, ED, ThreeD, tmp);
@@ -159,7 +159,7 @@ List loop_R(NumericMatrix xy, double ALPHA,
                       Named("f1") = f1);
 }
 
-void transR(NumericVector& xyvec,NumericMatrix& xy, NumericVector& radius, 
+void transR(NumericVector& xyvec,NumericMatrix& xy, NumericVector& radius,
             double& radiusvec, NumericVector& radiusall) {
   int out = 1;
   while (out==1) {
@@ -170,16 +170,16 @@ void transR(NumericVector& xyvec,NumericMatrix& xy, NumericVector& radius,
     }
     NumericVector ed(xy.nrow());
     NumericVector ra(xy.nrow());
-    for(int i = 0; i < xy.nrow(); i++){ 
+    for(int i = 0; i < xy.nrow(); i++){
       if(xy.ncol()==2){
-        ed[i] = pow((xy.row(i)[0] - xyvec[0]),2)+pow((xy.row(i)[1] - xyvec[1]),2);
+        ed[i] = std::pow((xy.row(i)[0] - xyvec[0]),2)+std::pow((xy.row(i)[1] - xyvec[1]),2);
       }else{
-        ed[i] = pow((xy.row(i)[1] - xyvec[1]),2)+pow((xy.row(i)[2] - xyvec[2]),2)+pow((xy.row(i)[0] - xyvec[0]),2);
+        ed[i] = std::pow((xy.row(i)[1] - xyvec[1]),2)+std::pow((xy.row(i)[2] - xyvec[2]),2)+std::pow((xy.row(i)[0] - xyvec[0]),2);
       }
       ra[i] = radius[i] + radiusvec;
-      
+
     }
-    if(is_true(all(ed>ra))){out = 0;}else{out = 1;} 
+    if(is_true(all(ed>ra))){out = 0;}else{out = 1;}
   }
   return;
 }
@@ -202,9 +202,9 @@ void alldis(int& out, NumericMatrix& xy1,NumericMatrix& xy2, NumericVector& radi
   for(int i=0;i<xy.nrow();i++){
     for(int j=0; j<transxy.nrow();j++){
       if(xy.ncol()==2){
-        ed[j] = sqrt(pow((xy.row(i)[0] - transxy.row(j)[0]),2)+pow((xy.row(i)[1] - transxy.row(j)[1]),2));
+        ed[j] = sqrt(std::pow((xy.row(i)[0] - transxy.row(j)[0]),2)+std::pow((xy.row(i)[1] - transxy.row(j)[1]),2));
       }else{
-        ed[j] = sqrt(pow((xy.row(i)[0] - transxy.row(j)[0]),2)+pow((xy.row(i)[1] - transxy.row(j)[1]),2)+pow((xy.row(i)[2] - transxy.row(j)[2]),2));
+        ed[j] = sqrt(std::pow((xy.row(i)[0] - transxy.row(j)[0]),2)+std::pow((xy.row(i)[1] - transxy.row(j)[1]),2)+std::pow((xy.row(i)[2] - transxy.row(j)[2]),2));
       }
       NumericMatrix xy(clone(xy1));
       NumericMatrix transxy(clone(xy2));
@@ -228,7 +228,7 @@ int alldis_R(NumericMatrix xy1,NumericMatrix xy2, NumericVector radius1, Numeric
 }
 
 // [[Rcpp::export("closeR")]]
-List close_R(NumericMatrix xy1,NumericMatrix xy2, NumericVector radius1, 
+List close_R(NumericMatrix xy1,NumericMatrix xy2, NumericVector radius1,
             NumericVector radius2, double delta, NumericVector direc){
   int out;
   NumericMatrix xy3(clone(xy2));
@@ -257,7 +257,7 @@ NumericMatrix list_R1(NumericMatrix M, NumericMatrix xy, NumericVector radius,
         ((i+1)*xuan+min(xy.column(0))-max(radius) - xy.row(k)[0]) +
         ((j+1)*yuan+min(xy.column(1))-max(radius) - xy.row(k)[1]) *
         ((j+1)*yuan+min(xy.column(1))-max(radius) - xy.row(k)[1]);
-      
+
       if(detect <= radius[k]*radius[k]){
         M(i,j) = 1;
       }
@@ -298,7 +298,7 @@ NumericVector list_R3(NumericMatrix M, NumericMatrix Me){
     Len[i] = k;
   }
   return Len;
-}  
+}
 
 // [[Rcpp::export("listR4")]]
 NumericVector list_R4(NumericMatrix M) {
