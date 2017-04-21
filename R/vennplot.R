@@ -18,7 +18,6 @@
 #' @details The names of data sets (circles) supplied to \code{combination} must be single letters, e.g., \code{combination = c(A=1, B=2, AB=0.5)}.  Here \code{A} means the whole data-set, so does \code{B}, which means \code{AB} can be no larger than \code{min(A,B)}.
 #' If a few two way intersections are unspecified, \code{mu} gives one way to generate them. For example, Suppose input combinations are \code{c(a=1,b=2,c=1,abc = 0.2)}.  Then default values for the two-way interserctions are  \code{ab = mu^(3-2)*abc = 0.2mu^(3-2)}, and \code{bc = mu^(3-2)*abc = 0.2mu^(3-2), ac = mu^(3-2)*abc = 0.2mu^(3-2)}.
 #'
-#' @author Zehao Xu <z267xu@uwaterloo.ca>, R. Wayne Oldford, Martin Lysy
 #'
 #' @return An object of the class \code{vennplot} with following components:
 #' \describe{
@@ -94,7 +93,6 @@ vennplot = function(combinations = NULL,fit = 0.5, GRAM = T,main = NULL, arbitra
   cols <- rainbow(m,alpha = alpha.col)
   name.dis = name[which(mc==1)]
   name.joint = name[-which(mc==1)]
-  set.seed("123456")
   if(m==1){
     radius = 0.5
     lossnum = 0

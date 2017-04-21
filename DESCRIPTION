@@ -1,8 +1,8 @@
 Package: vennplot
 Type: Package
 Title: Venn Diagrams in 2D and 3D
-Version: 0.9.01
-Date: 2017-03-16
+Version: 0.9.02
+Date: 2017-04-20
 Authors@R: c(person("Zehao", "Xu", email = "z267xu@uwaterloo.ca", role = c("aut", "cre")), person("R. Wayne", "Oldford", role = "ctb"), person("Martin", "Lysy", role = "ctb"))
 Description: Calculate and plot Venn diagrams in 2D and 3D.
 License: GPL (>= 3)
@@ -11,10 +11,10 @@ LinkingTo: Rcpp
 LazyData: true
 RoxygenNote: 6.0.1
 NeedsCompilation: yes
-Packaged: 2017-04-14 03:25:49 UTC; bigzi
+Packaged: 2017-04-21 02:02:06 UTC; bigzi
 Author: Zehao Xu [aut, cre],
   R. Wayne Oldford [ctb],
   Martin Lysy [ctb]
 Maintainer: Zehao Xu <z267xu@uwaterloo.ca>
 Repository: CRAN
-Date/Publication: 2017-04-14 14:05:53 UTC
+Date/Publication: 2017-04-21 06:05:09 UTC

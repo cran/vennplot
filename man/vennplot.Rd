@@ -58,7 +58,6 @@ The names of data sets (circles) supplied to \code{combination} must be single l
 If a few two way intersections are unspecified, \code{mu} gives one way to generate them. For example, Suppose input combinations are \code{c(a=1,b=2,c=1,abc = 0.2)}.  Then default values for the two-way interserctions are  \code{ab = mu^(3-2)*abc = 0.2mu^(3-2)}, and \code{bc = mu^(3-2)*abc = 0.2mu^(3-2), ac = mu^(3-2)*abc = 0.2mu^(3-2)}.
 }
 
-\author{Zehao Xu <z267xu@uwaterloo.ca>, R. Wayne Oldford, Martin Lysy}
 
 \examples{
 # arbitray sets
