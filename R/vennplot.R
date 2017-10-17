@@ -1,953 +1,1421 @@
-#' Draw Venn diagram in 2D or 3D
+#' Draw Venn and Euler diagram in 2D or 3D
 #'
-#' @param combinations Named numeric vector or data.frame where each row is a logical vector indicating set membership.  See Details.
-#' @param fit Scaling of semi-diameters; a scalar between 0.5 and 1.
-#' @param GRAM If \code{TRUE}, use the centralized GRAM matrix as the initial location.  Otherwise use the center of an arbitrary circle.
-#' @param arbitrary When \code{GRAM = FALSE}, an integer designating which circle to use for inital location, or \code{NULL} to use a random circle.  Argument is ignored when \code{GRAM = TRUE}.
-#' @param main Title of 2D plot.
-#' @param NAME The name of each circle. See Examples.
-#' @param ALPHA Size of steepest descent.
-#' @param alpha.col Color darkness.
+#' @param disjoint.combinations Named numeric vector or data.frame where each column should be factor.  See Details.
+#' @param vars Extract specific variables of data.frame as \code{disjoint.combinations}. If \code{vars = NULL}, all the information of data.frame will be extracted.
+#' @param Delta The length of step for method "lineSearch" or the initial interval of test points for method "NelderMead".
 #' @param ThreeD Draw Venn diagram in 3D. See Examples.
-#' @param delta Closeness betwen connected components.
-#' @param mu Generates defaults for unspecificed two-way intersections.  See Details.
-#' @param disjoint If \code{TRUE} plots only the disjoint part of overlapping circles.
+#' @param lambda It can be \code{NULL} or a numeric vector. If \code{lambda = NULL}, the loss function optimize lambda, else, based on the given lambda, loss function will calculate stress respectively then return the minimum one and corresponding lambdas.
+#' @param stressWay If data set can be separated into a few groups, there will be two ways to express stress: one is to sum up all the stress (named "sum"; default), the other is to use total TSS divide by total RSS (named "combine").
+#' @param delta Closeness between groups.
+#' @param weight The weight of \code{disjoint.combinations}. It should have the same length with \code{disjoint.combinations}.
+#' @param expand If some balls should not intersect and the code fails to detect it. It is possible to be fixed manually but sacrificing stress.
+#' @param twoWayGenerate Boolean factor, if false, any missing intersections are set as zero.
+#' @param scaleSearch Provide multiple methods to optimize scale lambda. The default method is "NelderMead". See Details.
+#' @param twoWaySearch If two way intersections are missing, multiple methods are available to generate two way intersections. The default method is "lineSearch". See Details.
+#' @param scaleSeachTolerance A list with tolerance value and boolean factor " proportional". The loop of NelderMead and lineSearch in scaleSearch will end when the difference or  proportional difference matches the tolerance value.
+#' @param distanceTolerance A list with tolerance value and boolean factor " proportional". The Newton method of finding distance will end when the difference or  proportional difference matches the tolerance value.
+#' @param lossTolerance A list with ToleranceofLoss, maximumStep, ALPHA, ToleranceofStepsize and boolean factor "proportional". If ALPHA is null, the step size will be searched through Newton method and it will stop when step reaches the maximum step or the difference matches ToleranceofStepsize; else step size will be fixed with ALPHA . The loss will end when the difference or proportional difference or the total loss value matches the "ToleranceofLoss".
+#' @param stressBound The loop of method NelderMead will stop when stress is beyond the stressBound.
+#' @param maximumStep The maximum searching step for method NelderMead and Newton method of calculating distance.
+#' @param planeSize The plane size of calculating disjoint intersections numerically.
+#' @param lower The lower bound of the interval to be searched for the "goldenSectionSearch" and "L-BFGS-B". See Details.
+#' @param upper The upper bound of the interval to be searched for the "goldenSectionSearch" and "Brent". See Details.
+#' @param control A list of control parameters. See Details
+#' @param hessian Logical. A numerically differentiated Hessian matrix be returned or not. See Details.
 #' @param mar Plot margins.
-#' @param priority Scalar or vector specifying the fitting priority for intersections.  See Examples.
-#' @param weight Priority weights.  Must the the same length as \code{priority}.  See Examples.
-#' @details The names of data sets (circles) supplied to \code{combination} must be single letters, e.g., \code{combination = c(A=1, B=2, AB=0.5)}.  Here \code{A} means the whole data-set, so does \code{B}, which means \code{AB} can be no larger than \code{min(A,B)}.
-#' If a few two way intersections are unspecified, \code{mu} gives one way to generate them. For example, Suppose input combinations are \code{c(a=1,b=2,c=1,abc = 0.2)}.  Then default values for the two-way interserctions are  \code{ab = mu^(3-2)*abc = 0.2mu^(3-2)}, and \code{bc = mu^(3-2)*abc = 0.2mu^(3-2), ac = mu^(3-2)*abc = 0.2mu^(3-2)}.
+#' @param cols Color of balls. If \code{NULL}, rainbow color will be set.
+#' @param alpha Color darkness.
+#' @param smooth For 3D plot, if true, the balls will be much more smoother. However, based on the high resolution, if the number of balls is too much, when rotating, the new window stumbles.
+#' @param ... Any further graphical parameters to be passed to the \code{plot} function.
 #'
+#' @details
+#' 1. One way sets must be given in \code{disjoint.combination}. e.g.\code{disjoint.combination = c( B=2, AB=0.5)} is not allowed.  \code{disjoint.combination = c(A = 0, B=2, AB=0.5)} works.
+#' 2. Except "NelderMead" and "lineSearch", "goldenSectionSearch" in \code{scaleSearch} and \code{twoWaySearch} is based on \code{\link{optimize}} and the rest methods are based on \code{\link{optim}}.
+#' 3. \code{lower}, \code{upper}, \code{control} and \code{hessian} share the same parameters with \code{\link{optim}}, and \code{lower}, \code{upper} can also be used in \code{\link{optimize}}
 #'
+#' @author Zehao Xu and Wayne Oldford
 #' @return An object of the class \code{vennplot} with following components:
 #' \describe{
-#'   \item{center}{centers of the circles (columns are (\code{x}, \code{y}) or (\code{x}, \code{y}, \code{z}) coordinates).}
-#'   \item{semidiameters}{semi-diameters of the circles.}
-#'   \item{LOSS}{total loss of \code{vennplot}.}
-#'   \item{weighted.least.square}{Given specific priorities and weights, the weighted least square between input and lay-out.}
+#'   \item{xy}{centres of the balls (columns are (\code{x}, \code{y}) or (\code{x}, \code{y}, \code{z}) coordinates).}
+#'   \item{radius}{radii of the balls.}
+#'   \item{loss}{total loss of \code{vennplot}.}
+#'   \item{stress}{stress value for solution.}
 #' }
 #' @examples
-#' # arbitray sets
-#' combinations = c(A=1.8, B=0.9,C=1.3, D = 1.3,E = 1.6, AC=0.3,
-#'                  AD= 0.3,BE = 0.3, AE = 0.4, f = 0.7,g =0.8,
-#'                  h = 0.5, gf = 0.2, Bh = 0.1,i = 1,j = 0.4,
-#'                  k=0.7,l = 1.4,kl = 0.2,m = 0.5,lm = 0.2,
-#'                  o = 0.8,p = 0.9, op = 0.3)
-#' ve = vennplot(combinations)
+#' # 3D Venn plot with arbitray sets
+#' disjoint.combinations = c(A=80, B=50,C=100, D = 100,E = 100,
+#'                           "A&C"=30, "A&D"= 30,"B&E" = 30, "A&E" = 40, h = 40, "B&h" = 10)
+#' ve = vennplot(disjoint.combinations, ThreeD = TRUE)
 #'
-#' # named sets
-#' # combinations = c(A=1, B=1,C=1, ABC = 0.1)
-#' # ve = vennplot(combinations,NAME = c("Loon","Goose","Duck"))
+#' # data frame
+#' vennplot(disjoint.combinations = sharks, vars = c("Au","USA","Fa","Sex"),
+#'          scaleSearch = "lineSearch", expand = 1.1)
 #'
-#' # effect of parameter mu
-#' #combinations = c(A=1, B=1, C=1, D=1, E=1, ABCDE = 0.1)
-#' # par(mfrow = c(1,2))
-#' # ve = vennplot(combinations)
-#' # ve = vennplot(combinations,mu=1.2)
-#'
-#' # 3D Venn plot
-#' combinations = c(A=803, B=304,C=1015, D = 1100,E = 1005,f = 967,H=3020,
-#'                  CD = 1000,BC = 248,ABC = 185,ADE = 327,CDfH = 846,
-#'                  I=800, J=760,K=1000, L = 1100,M = 900, IK=333,
-#'                  JM = 251,IL= 289, KM = 412,JL = 213)
-#' timestart <- Sys.time()
-#' ve = vennplot(combinations, disjoint = TRUE,ThreeD = TRUE)
-#' timeend <- Sys.time()
-#' runningtime <- timeend-timestart
-#' print(runningtime)
-#'
-#' # effect of parameters priority and weight
-#' # combinations = c(A = 79,B=29,C=58,AB = 25,AC = 44, BC=18,ABC = 1)
-#' # par(mfrow = c(2,2))
-#' # vennplot(combinations, priority = 2)
-#' # vennplot(combinations, priority = 3)
-#' # vennplot(combinations, priority = c(2,3), weight = c(30,1000))
-#' # vennplot(combinations, priority = c(2,3), weight = c(30,10))
-#'
-#' # binary data
-#' # combinations = sharks[,c(1,3:5,8)]
-#' # vennplot(combinations = combinations)
 #' @export
-vennplot = function(combinations = NULL,fit = 0.5, GRAM = T,main = NULL, arbitrary = NULL, mu = 2,
-                    NAME = NULL,ALPHA = 10^(-5),alpha.col = 0.3, disjoint = F,ThreeD = FALSE,
-                    delta = 0.01, mar = rep(1,4),priority = 2,weight = rep(1,length(priority))){
-  if(is.null(combinations)){
-    stop("combinations should not be empty")
-  }else if (is.list(combinations) || is.null(dim(combinations)) == F){
-    if(is.null(NAME)){
-      NAME = datatocom(combinations)$Name
-    }
-    combinations = datatocom(combinations)$combinations
-  }
-  if(disjoint == TRUE){
-    combinations = disjoint.transform(combinations)
-  }
-  name = names(combinations)
-  mc = str_length(name)
-  if(max(mc)==2){
-    combinations = combinations[which(combinations!=0)]
-  }
-  name = names(combinations)
-  mc = str_length(name)
-  m = length(which(mc==1))
-  cols <- rainbow(m,alpha = alpha.col)
-  name.dis = name[which(mc==1)]
-  name.joint = name[-which(mc==1)]
-  if(m==1){
-    radius = 0.5
-    lossnum = 0
-    weighted.least.square = 0
-    if(ThreeD){
-      xy = matrix(rep(0,3),nrow = 1)
-      colnames(xy) = c("x","y","z")
-      if (is.null(NAME)){name = name.dis}else{name = NAME}
-      open3d()
-      spheres3d(xy[,1],xy[,2],xy[,3], radius = radius,
-                color = cols, alpha = alpha.col)
-      text3d(xy[,1],xy[,2],xy[,3], name)
-    }
-    else{
-      xy = matrix(rep(0,2),nrow = 1)
-      colnames(xy) = c("x","y")
-      if (is.null(NAME)){name = name.dis}else{name = NAME}
-      plot.new()
-      circle.plot(xy,radius,name = name, col = cols, main = main, mar = mar)
-    }
-    outfinal = list(center = xy,diameter = radius, LOSS = lossnum, weighted.least.square = weighted.least.square)
-  }
-  else if(length(name.joint)==0){
-    outev3 = EV3(combinations = combinations, m=m, ThreeD = ThreeD, cols = cols, main = main, mar = mar,
-                 fit = fit, name.dis = name.dis,delta = delta, NAME=NAME, alpha.col = alpha.col)
-    xy = outev3$xy
-    radius = outev3$radius
-    lossnum = 0
-    weighted.least.square = 0
-    outfinal = list(center = xy,diameter = radius, LOSS = lossnum, weighted.least.square = weighted.least.square)
-  }
-  else{
-    combinations = combinations[order(mc)]
-    name = names(combinations)
-    mc = sort(mc)
-    joint = combinations[-which(mc==1)]
-    disjointcom = combinations[which(mc==1)]
-    if(length(weight)!=length(priority)){stop("length of priority and length of weight should be the same")}
-    if(ThreeD){priority = 2}
-    if(length(priority)>1 && any(priority==1)){weight = weight[-which(priority==1)];priority = priority[which(priority!=1)]
-    }else if(length(priority)==1 && priority==1){priority = 2}
-    if(all(priority%in%mc)==FALSE){weight = weight[-which(priority%in%mc!=TRUE)];priority = priority[which(priority%in%mc == TRUE)]}
-    if(length(priority)==0){priority = 2}
-    if(length(priority)>1){mu = 1.1
-    }else if(length(priority)==1 && priority!=2){mu = 1.1}
-    if(max(mc)>=3){
-      out = MC(combinations = combinations,disjointcom = disjointcom,mu = mu)
-      if(length(priority)==1 && priority==2){
-        name = out$name
-        name.joint = out$name.joint
-        joint = out$joint
-        newcombinations = out$combinations
-        newmc = out$mc
-      }else{
-        out1 = STC(mu = mu, newcombinations = out$combinations, priority = priority,disjointcom = disjointcom,
-                   combinations = combinations, group = NULL, plus = T)
-        outx = STC(mu = mu, newcombinations = out$combinations, priority = priority,disjointcom = disjointcom,
-                   combinations = combinations, group = NULL, plus = F)
-        name = out$name
-        name.joint = out$name.joint
-        joint = out$joint
-        newcombinations = out$combinations
-        newcombinationsplus = out1$newcombinations
-        newcombinationsminus = outx$newcombinations
-        if(all(newcombinationsplus == newcombinationsminus)){eq = 0}else{eq = 1}
-        newmc = out1$newmc
-        mc = out1$mc
-        combinationsgroup = out1$combinationsgroup
-        #combinations
-        combinationsplus = out1$combinations
-        combinationsminus = outx$combinations
-      }
-    }else{newcombinations = combinations;newmc = mc}
-    for(i in 1:length(joint)){
-      name1 = str_split(name.joint[i],"")[[1]]
-      value_a = disjointcom[which(names(disjointcom)==name1[1])]
-      value_b = disjointcom[which(names(disjointcom)==name1[2])]
-      if(value_a<joint[i] || value_b<joint[i]){stop("joint part cannot be larger than the whole part")}
-    }
-    group = RCH(name.joint = name.joint, name.dis= name.dis)
-    grouplength = do.call(c,lapply(group, length))
-    group = group[order(grouplength,decreasing = T)]
-    grouplength = do.call(c,lapply(group, length))
-    groupnum = length(group)
-    groupxy = list()
-    radiusxy = list()
-    namexy = list()
-    area = areacompute(newcombinations = newcombinations, disjointcom = disjointcom, ThreeD = ThreeD,
-                       newmc = newmc, fit = fit)
-    if(length(priority) == 1 && priority==2){
-      combinationsgroup = lapply(group,function(a,mu,name.dis,name){y = name.dis[a];for(i in 1:length(name)){
-        if(any(y%in%str_split(name[i],"")[[1]])){y = c(y,name[i])}};y = unique(y);z = str_length(y);
-        y = combinations[which(name%in%y)];return(y)},mu = mu,name.dis = name.dis, name = names(combinations))
-      NH = list()
-      fake = rep(0,40)
-      for(fitnumber in 1:40){
-        out2 = DC(group = group, groupnum = groupnum, groupxy = groupxy, radiusxy = radiusxy, namexy = namexy,
-                  newcombinations = newcombinations,NAME = NAME, ALPHA = ALPHA,
-                  radius = area$radius, ThreeD = ThreeD, joint.area = area$joint.area, Area = area$Area,
-                  GRAM = GRAM, arbitrary = arbitrary, fitnumber = fitnumber)
-        lossnum = out2$lossnum
-        fake[fitnumber] = lossnum
-        NH[[fitnumber]] = out2
-        if(fitnumber == 1){next}
-        else if(fake[fitnumber] >= fake[fitnumber-1]){out2 = NH[[fitnumber-1]];break}
-        else{out2 = NH[[fitnumber]]}
-      }
-      if(priority%in%mc){
-        weighted.least.square = HH(combinations = combinations, disjointcom = disjointcom, priority = priority,
-                                   combinationsgroup = combinationsgroup, out2 = out2, weight = weight)
-      }else{weighted.least.square = 0}
-    }else{
-      out4 = PAS(group = group, groupnum = groupnum, groupxy = groupxy, radiusxy = radiusxy, namexy = namexy,priority = priority,
-                 weight = weight, newcombinations = newcombinations,NAME = NAME, ALPHA = ALPHA,fit = fit,area = area,ThreeD = ThreeD,
-                 GRAM = GRAM, arbitrary = arbitrary, newcombinationsplus = newcombinationsplus, mu = mu, eq = eq,combinations = combinations,
-                 newcombinationsminus = newcombinationsminus,disjointcom = disjointcom, newmc = newmc,
-                 combinationsgroup = combinationsgroup, combinationsplus = combinationsplus, combinationsminus = combinationsminus)
-      out2 = out4$out2
-      weighted.least.square = out4$weighted.least.square
-    }
-    lossnum = out2$lossnum
-    groupxy = out2$groupxy
-    radiusxy = out2$radiusxy
-    namexy = out2$namexy
-    #combine all groups
-    groupxylist = groupxy
-    radiusxylist = radiusxy
-    if(groupnum>1){
-      out3 = QNC(groupnum = groupnum, groupxy = groupxy, radiusxy = radiusxy,radius = area$radius, delta = delta, namexy = namexy)
-      groupxylist = out3$groupxylist
-      radiusxylist = out3$radiusxylist
-      namexy = out3$namexy
-    }
-    xy = groupxylist[[groupnum]]
-    radius = radiusxylist[[groupnum]]
-    name.dis = namexy[[groupnum]]
-    if(ThreeD){
-      open3d()
-      spheres3d(xy[,1],xy[,2],xy[,3], radius = radius,
-                color = cols, alpha = alpha.col)
-      text3d(xy[,1],xy[,2],xy[,3],name.dis)
-    }else{
-      plot.new()
-      circle.plot(xy,radius,name.dis,cols, main = main, mar = mar)
-    }
-    outfinal = list(center = xy,diameter = radius, LOSS = lossnum, weighted.least.square = unname(weighted.least.square))
-  }
-  return(outfinal)
-}
+vennplot <- function(disjoint.combinations = NULL, vars = NULL, Delta = 0.1,
+                     ThreeD = FALSE, lambda = NULL, stressWay = c("sum","combine"),
+                     delta = 0.01, weight = NULL, expand = NULL, twoWayGenerate = FALSE,
+                     scaleSearch = c("NelderMead", "lineSearch", "goldenSectionSearch",
+                                     "BFGS", "CG", "L-BFGS-B", "SANN", "Brent"),
+                     twoWaySearch = c("lineSearch", "NelderMead", "goldenSectionSearch",
+                                      "BFGS", "CG", "L-BFGS-B", "SANN", "Brent"),
+                     scaleSeachTolerance = list(value = 1e-5,  proportional = FALSE),
+                     distanceTolerance = list(value = 1e-5,  proportional = FALSE),
+                     lossTolerance = list(ToleranceofLoss = 1e-10, maximumStep = 10, ALPHA = 1e-2,
+                                          ToleranceofStepsize = 1e-5,  proportional = FALSE),
+                     stressBound = 1e-3, maximumStep = 50, planeSize = 50,
+                     lower=  -Inf, upper = Inf, control = list(), hessian = FALSE,
+                     mar = rep(1,4), cols = NULL, alpha = 0.3, smooth = FALSE, ...){
 
+  if(is.null(disjoint.combinations)) stop("combinations should not be empty")
+
+  if (is.data.frame(disjoint.combinations)){
+    disjoint.combinations <- extractCombinations(disjoint.combinations, vars = vars)
+  }
+  combinations <- disjoint2combinations(disjoint.combinations)
+  # reorder disjoint.combinations with ways
+  reOrder <- reorderDisjointCombinations(combinations, disjoint.combinations)
+  disjoint.combinations <- reOrder$newDisjointCombinations
+  # scale proportionately
+  combProp <- combinations/sum(disjoint.combinations)
+  disProp <- disjoint.combinations/sum(disjoint.combinations)
+  # Check weight vector
+  if(is.null(weight)){
+    weight <- rep(1,length(disjoint.combinations))
+  } else {
+    if(length(weight)!=length(disjoint.combinations)){
+      stop("weight must be NULL or the same length as the number of disjoint combinations")
+    }
+  }
+  weight <- weight[reOrder$newOrder]
+  disjointSetNames <- names(disProp)
+  names(weight) <- disjointSetNames
+
+  # Get the number of intersections
+  numWays <- str_count(disjointSetNames, pattern = "&") + 1
+
+  if(max(numWays)==2){
+    nonEmptyTwoWays <- which(combProp!=0)
+    weight <- weight[nonEmptyTwoWays]
+    disjointSetNames <- disjointSetNames[nonEmptyTwoWays]
+    numWays <- numWays[nonEmptyTwoWays]
+    combProp <- combProp[nonEmptyTwoWays]
+    disProp <- disProp[nonEmptyTwoWays]
+  }
+
+  oneWays <- which(numWays == 1)
+  # Check colours
+  if (is.null(cols)) {
+    cols <- rainbow(length(oneWays), alpha = alpha)
+  }
+  oneWaySetName <- disjointSetNames[oneWays]
+  oneWaySet <- combProp[oneWays]
+  m <- length(oneWays)
+
+  # and for those that are larger than one way set
+  if (length(disjointSetNames) == length(oneWays)) {
+    largerThanOneWaySetName <- NULL
+  } else {
+    largerThanOneWaySetName <- disjointSetNames[-oneWays]
+    # All names appearing in two and higher order ways must appear
+    # as individual input sets too
+    if (!all(unique(unlist(str_split(largerThanOneWaySetName,"&"))) %in% oneWaySetName)){
+      stop("Some intersection sets contain sets which do not appear individually.")
+    }
+  }
+  # Detect disjoint groups of sets and return groups in a list
+  groups <- groupDetection(largerThanOneWaySetName = largerThanOneWaySetName,
+                           oneWaySetName= oneWaySetName)
+  # Order groups from largest to smallest
+  groupOrder <- order(sapply(groups, length), decreasing = T)
+  groups <- groups[groupOrder]
+  ngroups <- length(groups)
+
+  # get the combinations and proportions separated by groups
+
+  combPropGroup <- list()
+  disPropGroup <- list()
+  for(i in 1:ngroups){
+    groupMember <- groups[[i]]
+    groupWay <- oneWaySetName[groupMember]
+    for(j in 1:length(disjointSetNames)){
+      if(any(groupWay %in% str_split(disjointSetNames[j],"&")[[1]])){
+        groupWay <- c(groupWay, disjointSetNames[j])}
+    }
+    groupWay <- unique(groupWay)
+    combPropGroup[[i]] <- combProp[which(disjointSetNames %in% groupWay)]
+    disPropGroup[[i]] <- disProp[which(disjointSetNames %in% groupWay)]
+  }
+
+  # Calculate radius
+  radius <- if (ThreeD){
+    (3*oneWaySet/(4*pi))^(1/3)
+  } else {
+    sqrt(oneWaySet/pi)
+  }
+  # Get radii within each group
+  radiusGroup <- lapply(groups,
+                        function(grp){radius[grp]})
+
+  weightGroup <- lapply(disPropGroup,
+                        function(prop){
+                          weight[which(names(weight) %in% names(prop)==TRUE)]})
+  # lossFunction
+  groupCentre <- list()
+  if(length(lower) != length(upper)){
+    stop("the length of lower vector must be equal to the length of upper vector")
+  }
+  if(length(lower) == 1 && length(upper) == 1){
+    lower = rep(lower,2)
+    upper = rep(upper,2)
+  }
+  if(length(hessian) == 1){hessian = rep(hessian, 2)}
+
+  scaleSearch <- match.arg(scaleSearch)
+  twoWaySearch <- match.arg(twoWaySearch)
+  stressWay <- match.arg(stressWay)
+  stressGroup <- rep(0, ngroups)
+  RSSGroup <- rep(0, ngroups)
+  TSSGroup <- rep(0, ngroups)
+  loss <- 0
+  for (gn in 1:ngroups){
+    lossFunctionOutput <- lossFunction(gn = gn, combProp = combPropGroup[[gn]], Delta = Delta,
+                                       radius = radiusGroup[[gn]], disProp = disPropGroup[[gn]], lambda = lambda,
+                                       weight = weightGroup[[gn]], ThreeD = ThreeD,
+                                       method = c(scaleSearch, twoWaySearch), twoWayGenerate = twoWayGenerate,
+                                       lower=  lower, upper = upper, control = control, hessian = hessian,
+                                       expand = expand, scaleSeachTolerance = scaleSeachTolerance,
+                                       distanceTolerance = distanceTolerance, lossTolerance = lossTolerance,
+                                       stressBound = stressBound, maximumStep = maximumStep, planeSize = planeSize)
+    groupCentre[[gn]] <- lossFunctionOutput$centre
+    stressGroup[gn] <- lossFunctionOutput$stress
+    RSSGroup[gn] <- lossFunctionOutput$RSS
+    TSSGroup[gn] <- lossFunctionOutput$TSS
+    loss <- loss + lossFunctionOutput$loss
+  }
+  if(stressWay == "sum"){
+    stress <- sum(stressGroup)
+  } else {
+    #combine stress
+    stress <- sum(RSSGroup)/sum(TSSGroup)
+  }
+  #combine all groups
+  if(ngroups > 1){
+    combinedGroups <- combineGroups(groupCentre = groupCentre, radiusGroup = radiusGroup,delta = delta)
+    xy <- combinedGroups$xy
+    radius <- combinedGroups$radius
+    oneWaySetName <- combinedGroups$namexy
+  } else {
+    xy <- groupCentre[[1]]
+    radius <- radiusGroup[[1]]
+    oneWaySetName <- names(radius)
+  }
+  if(ThreeD){
+    sphere(xy = xy, radius = radius, cols = cols, alpha = alpha, oneWaySetName = oneWaySetName, smooth = smooth)
+  } else {
+    plot.new()
+    plotCircle(xy, radius, oneWaySetName, cols, mar = mar)
+  }
+  list(xy = xy, radius = radius, loss = loss, stress = stress)
+}
 #--- helper functions -----------------------------------------------------
 
 #library(rgl)
-#library(strinr)
+#library(stringr)
 #library(Rcpp)
 #sourceCpp(file = "your path/vennCpp2.cpp")
 
-#Big loop
-DC = function(group = group, groupnum = groupnum, groupxy = groupxy, radiusxy = radiusxy, namexy = namexy,
-              newcombinations = newcombinations, NAME = NAME, ALPHA = ALPHA,radius = radius, ThreeD = ThreeD,
-              joint.area = joint.area, Area = Area,GRAM = GRAM, arbitrary = arbitrary, fitnumber = fitnumber){
-  mc = str_length(names(newcombinations))
-  name.dis = names(newcombinations)[which(mc==1)]
-  name.joint = names(newcombinations)[which(mc!=1)]
-  lossnum = 0
-  for(gn in 1:groupnum){
-    name.dis1 = name.dis[group[[gn]]]
-    m1 = length(name.dis1)
-    if(m1 == 1){
-      if (is.null(NAME)){name1 = name.dis1}else{name1 = NAME[group[[gn]]]}
-      radius1 = radius[name.dis1]
-      if(ThreeD){groupxy[[gn]] = matrix(c(0,0,0),nrow = 1)}else{groupxy[[gn]] = matrix(c(0,0),nrow=1)}
-      radiusxy[[gn]] = radius1
-      namexy[[gn]] = name1
-      rownames(groupxy[[gn]]) = name1
-    }else{
-      name.joint1 = rep(0,length(name.joint))
-      for (i in 1:length(name.joint)){
-        if(any(str_detect(name.joint[i],name.dis1))){
-          name.joint1[i] = name.joint[i]
-        }
-      }
-      joint.area1 = joint.area[which(names(joint.area) == name.joint1)]
-      if(length(which(name.joint1 == "0"))!=0){
-        name.joint1 = name.joint1[-which(name.joint1 == "0")]
-      }
-      Area1 = Area[name.dis1]
-      radius1 = radius[name.dis1]
-      N = matrix(rep(0,length(name.joint1)*length(name.dis1)),nrow = length(name.joint1))
-      for (i in 1:length(name.joint1)){
-        for (j in 1:length(name.dis1)){
-          if(str_detect(name.joint1[i],name.dis1[j])){
-            N[i,j] = j
-          }
-        }
-      }
-      N=t(N)
-      N = matrix(N[which(N != 0)],ncol = 2, byrow = T)
-      ED = matrix(rep(0, m1^2),ncol = m1)
-      W = matrix(rep(0,m1^2),nrow = m1,ncol = m1)
-      D = W
-      for (k in 1:dim(N)[1]){
-        for (i in 1:m1){
-          for (j in 1:m1){
-            if (i == N[k,1] && j == N[k,2]){
-              #Euler distance
-              ED[i,j] = Distance(radius1[i],radius1[j], joint.area1[k],ThreeD = ThreeD)
-              #Jaccard distance
-              D[i,j] = joint.area1[k]/(Area1[i]+Area1[j]-joint.area1[k])
+#lossFunction, the main function of vennplot; return centres of each group
+lossFunction <- function(gn, combProp, radius, Delta, lambda,disProp,
+                         weight, ThreeD, method, twoWayGenerate,
+                         lower, upper, control, hessian, expand, scaleSeachTolerance,
+                         distanceTolerance, lossTolerance, stressBound, maximumStep, planeSize){
+  disjointSetNames <- names(combProp)
+  numWays <- str_count(disjointSetNames,pattern = "&")+1
+  #one way set
+  oneWaySetName <- disjointSetNames[which(numWays==1)]
+  m <- length(oneWaySetName)
+  if(m == 1){
+    if(ThreeD){centre <- matrix(c(0,0,0),nrow = 1)}else{centre <- matrix(c(0,0),nrow=1)}
+    rownames(centre) <- oneWaySetName
+    loss <- 0
+    oneWayStress <- calculateStress(centre, radius, disProp, weight, ThreeD, planeSize,twoWayGenerate)
+    RSS <- oneWayStress$RSS
+    TSS <- oneWayStress$TSS
+    stress <- oneWayStress$stress
+  }else{
+    complete <- TRUE
+    if(max(numWays)>=3){
+      firstGenerate <- twoWayGeneration(combProp = combProp, mu = 1)
+      #To determine which example we use: Example 1 or Example 2
+      if(firstGenerate$resam != 0){complete <- FALSE}
+      newTworWaySet <- firstGenerate$newTworWaySet
+    }else{newTworWaySet <- combProp[which(numWays == 2)]}
+    EDandInitialLocation <- EuclideanDistance(newTworWaySet = newTworWaySet, oneWaySetName = oneWaySetName,
+                                              radius = radius, ThreeD = ThreeD, initial = TRUE,
+                                              expand = expand, distanceTolerance = distanceTolerance,
+                                              maximumStep = maximumStep)
+    ED <- EDandInitialLocation$ED
+    xy <- EDandInitialLocation$xy
+    if(twoWayGenerate == TRUE &&  complete == FALSE){
+      out <- solveWithMu(ED = ED, xy = xy, combProp = combProp, ThreeD = ThreeD,
+                         Delta = Delta,  radius = radius, disProp = disProp, weight = weight, method = method,
+                         firstGenerate = firstGenerate,
+                         lower=  lower, upper = upper, control = control, hessian = hessian,
+                         expand = expand, scaleSeachTolerance = scaleSeachTolerance,
+                         distanceTolerance = distanceTolerance, lossTolerance = lossTolerance,
+                         stressBound = stressBound, maximumStep = maximumStep, planeSize = planeSize,
+                         twoWayGenerate = twoWayGenerate)
+      ED <- out$ED
+      xy <- out$xy
+    }
+    result <- solveWithLambda(ED = ED, xy = xy, ThreeD = ThreeD, lambda = lambda, Delta = Delta,
+                              radius = radius, disProp = disProp, weight = weight, method = method,
+                              lower=  lower, upper = upper, control = control, hessian = hessian,
+                              scaleSeachTolerance = scaleSeachTolerance, lossTolerance = lossTolerance,
+                              stressBound = stressBound, maximumStep = maximumStep, planeSize = planeSize,
+                              twoWayGenerate = twoWayGenerate)
+    centre <- result$xy
+    rownames(centre) <- oneWaySetName
+    stress <- result$stress
+    loss <- result$loss
+    RSS <- result$RSS
+    TSS <- result$TSS
+  }
+  list(centre = centre, loss = loss, stress = stress, RSS = RSS, TSS = TSS)
+}
+#optimize lambda to get centre
+solveWithLambda <- function(ED , xy , ThreeD , lambda, Delta, radius ,
+                            disProp, weight, method, lower, upper, control,
+                            hessian, scaleSeachTolerance, lossTolerance,
+                            stressBound, maximumStep, planeSize, twoWayGenerate) {
+  stress_0_Calculation <- calculateStress(xy = xy,radius = radius,
+                                          disProp = disProp,
+                                          weight = weight,ThreeD = ThreeD, planeSize = planeSize,
+                                          twoWayGenerate = twoWayGenerate)
+  stress_0 <- stress_0_Calculation$stress
+  lambda_1_Stress <- findOptimalStress(lambda = 1, xy = xy,weight = weight,
+                                       radius = radius, disProp = disProp, ED = ED,
+                                       ThreeD = ThreeD, lossTolerance = lossTolerance, planeSize = planeSize,
+                                       twoWayGenerate = twoWayGenerate)
+  stress_1 <- lambda_1_Stress$stress
+  if(ThreeD){offset <- 3}else{offset <- 2}
+  if(min(stress_0,stress_1) == stress_0 && dim(xy)[1]<=offset){
+    stress <- stress_0
+    loss <- 0
+    RSS <- stress_0_Calculation$RSS
+    TSS <- stress_0_Calculation$TSS
+  }else{
+    if(is.null(lambda)){
+      if(method[1] == "NelderMead"){
+        Centre <- list();
+        lambda_2_Stress <- findOptimalStress(lambda = 1+Delta, xy = xy, weight = weight,
+                                             radius = radius, disProp = disProp,
+                                             ED = ED, ThreeD = ThreeD, lossTolerance = lossTolerance,
+                                             planeSize = planeSize, twoWayGenerate = twoWayGenerate)
+        stress_2 <- lambda_2_Stress$stress
+        lambda_3_Stress <- findOptimalStress(lambda = 1-Delta, xy = xy, weight = weight,
+                                             radius = radius, disProp = disProp, ED = ED,
+                                             ThreeD = ThreeD, lossTolerance = lossTolerance,
+                                             planeSize = planeSize, twoWayGenerate = twoWayGenerate)
+        stress_3 <- lambda_3_Stress$stress
+        Centre[[1]] <- lambda_1_Stress$xy
+        Centre[[2]] <- lambda_2_Stress$xy
+        Centre[[3]] <- lambda_3_Stress$xy
+        STRESS <- c(stress_1,stress_2,stress_3)
+        xy <- Centre[[which(STRESS == min(STRESS))[1]]]
+        loss <- c(lambda_1_Stress$loss, lambda_2_Stress$loss, lambda_3_Stress$loss)[which(STRESS == min(STRESS))[1]]
+        LAMBDA <- c(1,1+Delta,1-Delta)[order(STRESS)]
+        STRESS <- sort(STRESS)
+        count <- 0
+        while (count< maximumStep && min(STRESS) > stressBound){
+          count <- count+1
+          lambda_0 <- mean(LAMBDA[1:2])
+          lambda_R <- lambda_0 + (lambda_0 - LAMBDA[3])
+          lambda_R_stress <- findOptimalStress(lambda = lambda_R, xy = xy, weight = weight,
+                                               radius = radius, disProp = disProp, ED = ED,
+                                               ThreeD = ThreeD, lossTolerance = lossTolerance,
+                                               planeSize = planeSize, twoWayGenerate = twoWayGenerate)
+          stress_R <- lambda_R_stress$stress
+          #Reflection:
+          if(STRESS[1] <= stress_R &&  stress_R< STRESS[2]){
+            STRESS <- c(STRESS[1] , stress_R , STRESS[2])
+            LAMBDA <- c(LAMBDA[1], lambda_R, LAMBDA[2])
+          } else if (stress_R < STRESS[1]){
+            #Expansion
+            xy <- lambda_R_stress$xy
+            loss <- lambda_R_stress$loss
+            lambda_E <- lambda_0 + 2*(lambda_R - lambda_0)
+            lambda_E_stress <- findOptimalStress(lambda = lambda_E, xy = xy, weight = weight,
+                                                 radius = radius, disProp = disProp, ED = ED,
+                                                 ThreeD = ThreeD, lossTolerance = lossTolerance,
+                                                 planeSize = planeSize, twoWayGenerate = twoWayGenerate)
+            stress_E = lambda_E_stress$stress
+            if(stress_E<stress_R){
+              STRESS <- c(stress_E , stress_R , STRESS[1])
+              LAMBDA <- c(lambda_E, lambda_R, LAMBDA[1])
+              xy <- lambda_E_stress$xy
+              loss <- lambda_E_stress$loss
+            }else if(stress_R<=stress_E && stress_E <STRESS[1]){
+              STRESS <- c(stress_R, stress_E, STRESS[1])
+              LAMBDA <- c(lambda_R, lambda_E, LAMBDA[1])
+            }
+            else if(STRESS[1]<=stress_E && stress_E <STRESS[2]){
+              STRESS <- c(stress_R, STRESS[1],stress_E)
+              LAMBDA <- c(lambda_R, LAMBDA[1], lambda_E)
+            }else{
+              STRESS <- c(stress_R, STRESS[1],STRESS[2])
+              LAMBDA <- c(lambda_R, LAMBDA[1],LAMBDA[2])
+            }
+          } else if(stress_R >= STRESS[2]) {
+            #Contraction
+            lambda_C <-  lambda_0 + 0.5*(LAMBDA[3] - lambda_0)
+            lambda_C_stress <- findOptimalStress(lambda = lambda_C, xy = xy, weight = weight,
+                                                 radius = radius, disProp = disProp, ED = ED,
+                                                 ThreeD = ThreeD, lossTolerance = lossTolerance,
+                                                 planeSize = planeSize, twoWayGenerate = twoWayGenerate)
+            stress_C <- lambda_C_stress$stress
+            if (stress_C < STRESS[3]){
+              STRESS <- c(STRESS[1],STRESS[2],stress_C)
+              LAMBDA <- c(LAMBDA[1],LAMBDA[2],lambda_C)[order(STRESS)]
+              STRESS <- sort(STRESS)
+              if(min(STRESS) == stress_C){
+                xy <- lambda_C_stress$xy
+                loss <- lambda_C_stress$loss
+              }
+            } else {
+              #shrink
+              LAMBDA[2] <- (LAMBDA[1]+LAMBDA[2])/2
+              STRESS[2] <- findOptimalStress(lambda = LAMBDA[2], xy = xy, weight = weight,
+                                             radius = radius, disProp = disProp, ED = ED,
+                                             ThreeD = ThreeD, lossTolerance = lossTolerance,
+                                             planeSize = planeSize,twoWayGenerate = twoWayGenerate)$stress
+              LAMBDA[3] <- (LAMBDA[1]+LAMBDA[3])/2
+              STRESS[3] <- findOptimalStress(lambda = LAMBDA[3], xy = xy, weight = weight,
+                                             radius = radius, disProp = disProp, ED = ED,
+                                             ThreeD = ThreeD, lossTolerance = lossTolerance,
+                                             planeSize = planeSize,twoWayGenerate = twoWayGenerate)$stress
             }
           }
+          if(allConnectedCpp(xy = xy, radius = radius, ThreeD = ThreeD) == FALSE){break}
+          if(BoolScaleNMCpp( proportional = scaleSeachTolerance$ proportional,
+                             value = scaleSeachTolerance$value,
+                             LAMBDA = LAMBDA, STRESS = STRESS) == FALSE){break}
         }
-      }
-      for (i in 1:(m1-1)){
-        for (j in (i+1):m1){
-          if (ED[i,j] == 0){
-            ED[i,j] = Distance(radius1[i],radius1[j],0,ThreeD = ThreeD)
+        if(allConnectedCpp(xy = xy, radius = radius, ThreeD = ThreeD) == FALSE) {
+          lambdaStress <-  findOptimalStress(lambda = LAMBDA[2], xy = xy, weight = weight,
+                                             radius = radius, disProp = disProp, ED = ED,
+                                             ThreeD = ThreeD, lossTolerance = lossTolerance,
+                                             planeSize = planeSize, twoWayGenerate = twoWayGenerate)
+          xy <- lambdaStress$xy
+          if(allConnectedCpp(xy = xy, radius = radius, ThreeD = ThreeD) == FALSE) {
+            lambdaStress <-  findOptimalStress(lambda = LAMBDA[3], xy = xy, weight = weight,
+                                               radius = radius, disProp = disProp, ED = ED,
+                                               ThreeD = ThreeD, lossTolerance = lossTolerance,
+                                               planeSize = planeSize, twoWayGenerate = twoWayGenerate)
+            xy <- lambdaStress$xy
           }
-          else{next}
+          stress <- lambdaStress$stress
+          loss <- lambdaStress$loss
+          RSS <- lambdaStress$RSS
+          TSS <- lambdaStress$TSS
+        } else {
+          lambdaStress <-  findOptimalStress(lambda = LAMBDA[1], xy = xy, weight = weight,
+                                             radius = radius, disProp = disProp, ED = ED,
+                                             ThreeD = ThreeD, lossTolerance = lossTolerance,
+                                             planeSize = planeSize, twoWayGenerate = twoWayGenerate)
+          xy <- lambdaStress$xy
+          stress <- lambdaStress$stress
+          loss <- lambdaStress$loss
+          RSS <- lambdaStress$RSS
+          TSS <- lambdaStress$TSS
         }
+      } else if (method[1] == "lineSearch"){
+        lambda_2_Stress <- findOptimalStress(lambda = 1+Delta, xy = xy, weight = weight,
+                                             radius = radius, disProp = disProp, ED = ED,
+                                             ThreeD = ThreeD, lossTolerance = lossTolerance,
+                                             planeSize = planeSize, twoWayGenerate = twoWayGenerate)
+        stress_2 <- lambda_2_Stress$stress
+        lambda_3_Stress <- findOptimalStress(lambda = 1-Delta, xy = xy, weight = weight,
+                                             radius = radius, disProp = disProp, ED = ED,
+                                             ThreeD = ThreeD, lossTolerance = lossTolerance,
+                                             planeSize = planeSize, twoWayGenerate = twoWayGenerate)
+        stress_3 <- lambda_3_Stress$stress
+        if(min(stress_1,stress_2,stress_3) == stress_1){
+          xy <- lambda_1_Stress$xy
+          loss <- lambda_1_Stress$loss
+          stress <- stress_1
+          RSS <- lambda_1_Stress$RSS
+          TSS <- lambda_1_Stress$TSS
+        } else {
+          Center <- list()
+          Loss <- c()
+          if(min(stress_1,stress_2,stress_3) == stress_2){
+            stress_n <- stress_2
+            stress <- stress_2
+            Center[[1]] <- lambda_2_Stress$xy
+            Loss[1] <- lambda_2_Stress$loss
+            lambda <- 1+Delta
+            shrinkage <- TRUE
+          } else {
+            stress_n <- stress_3
+            stress <- stress_3
+            Center[[1]] <- lambda_3_Stress$xy
+            Loss[1] <- lambda_3_Stress$loss
+            lambda <- 1-Delta
+            shrinkage <- FALSE
+          }
+          RSSVec <- c()
+          TSSVec <- c()
+          n <- 1
+          while(stress_n <= stress){
+            stress <- stress_n
+            if(shrinkage){
+              lambda <- lambda + Delta
+            } else {
+              lambda <- lambda - Delta
+            }
+            n <- n+1
+            lambdaStress <- findOptimalStress(lambda = lambda, xy = Center[[n-1]], weight = weight,
+                                              radius = radius, disProp = disProp, ED = ED,
+                                              ThreeD = ThreeD, lossTolerance = lossTolerance,
+                                              planeSize = planeSize, twoWayGenerate = twoWayGenerate)
+            Center[[n]] <- lambdaStress$xy
+            Loss[n] <- lambdaStress$loss
+            stress_n <- lambdaStress$stress
+            RSSVec[n] <- lambdaStress$RSS
+            TSSVec[n] <- lambdaStress$TSS
+            if(BoolScaleLCpp( proportional = scaleSeachTolerance$ proportional,
+                              value = scaleSeachTolerance$value, stress_n = stress_n, stress = stress)){break}
+          }
+          xy <- Center[[n-1]]
+          loss <- Loss[n-1]
+          RSS <- RSSVec[n-1]
+          TSS <- TSSVec[n-1]
+        }
+      }else if(method[1] == "goldenSectionSearch"){
+
+        Optimization <- optimize(f = findOptimalStressLambda, lower=  lower[1], upper = upper[1],
+                                 xy = lambda_1_Stress$xy, weight = weight,
+                                 radius = radius, disProp = disProp, ED = ED,
+                                 ThreeD = ThreeD, lossTolerance = lossTolerance,
+                                 planeSize = planeSize, twoWayGenerate = twoWayGenerate)
+        if(is.null(Optimization$minimum)||is.infinite(Optimization$minimum)){
+          stop("This method does not converge")
+        }
+        lambdaStress <- findOptimalStress(lambda = Optimization$minimum, xy = lambda_1_Stress$xy,weight = weight,
+                                          radius = radius, disProp = disProp, ED = ED,
+                                          ThreeD = ThreeD, lossTolerance = lossTolerance,
+                                          planeSize = planeSize, twoWayGenerate = twoWayGenerate)
+        xy <- lambdaStress$xy
+        loss <- lambdaStress$loss
+        stress <- Optimization$objective
+        RSS <- lambdaStress$RSS
+        TSS <- lambdaStress$TSS
+      } else {
+        ## method[1] must be an method appropriate for optim(...)
+        Optimization <- optim(par = 1, fn = findOptimalStressLambda,method = method[1],
+                              lower = lower[1], upper = upper[1],
+                              control = control, hessian = hessian[1],
+                              xy = lambda_1_Stress$xy, weight = weight,
+                              radius = radius, disProp = disProp, ED = ED,
+                              ThreeD = ThreeD, lossTolerance = lossTolerance,
+                              planeSize = planeSize, twoWayGenerate = twoWayGenerate)
+        if(is.null(Optimization$par)||is.infinite(Optimization$par)){
+          stop("This method does not converge")
+        }
+        lambdaStress <- findOptimalStress(lambda = Optimization$par, xy = lambda_1_Stress$xy,weight = weight,
+                                          radius = radius, disProp = disProp, ED = ED,
+                                          ThreeD = ThreeD, lossTolerance = lossTolerance,
+                                          planeSize = planeSize, twoWayGenerate = twoWayGenerate)
+        xy <- lambdaStress$xy
+        loss <- lambdaStress$loss
+        stress <- Optimization$value
+        RSS <- lambdaStress$RSS
+        TSS <- lambdaStress$TSS
       }
-      ED = ED+t(ED)
-      ED[which(ED==10)]=0
-      rownames(ED) = name.dis1
-      colnames(ED) = name.dis1
-      D = D+t(D)+diag(1,m1)
-      rownames(D) = name.dis1
-      colnames(D) = name.dis1
-      D = 1-D
-      #Using Gram matrix to find the initial location
-      if (GRAM){
-        D2 = ED^2
-        J = diag(m1)-1/m1
-        G = -0.5*J%*%D2%*%J
-        Em = svd(G)$u
-        lambdam = svd(G)$d
-        U = Em*sqrt(lambdam)
+    } else {
+      Centre <- list()
+      RSSVec <- c()
+      TSSVec <- c()
+      STRESS <- rep(0,length(lambda))
+      Loss <- rep(1,length(lambda))
+      for(i in 1:length(lambda)){
+        out <- findOptimalStress(lambda = lambda[i], xy = xy, weight = weight,
+                                 radius = radius, disProp = disProp, ED = ED,
+                                 ThreeD = ThreeD, lossTolerance = lossTolerance,
+                                 planeSize = planeSize, twoWayGenerate = twoWayGenerate)
+        Centre[[i]] <- out$xy
+        Loss[i] <- out$loss
+        STRESS[i] <- out$stress
+        RSSVec[i] <- out$RSS
+        TSSVec[i] <- out$TSS
+      }
+      index <- which(STRESS == min(STRESS))[1]
+      stress <- STRESS[index]
+      xy <- Centre[[index]]
+      loss <- Loss[index]
+      RSS <- RSSVec[index]
+      TSS <- TSSVec[index]
+    }
+  }
+  list(xy = xy, loss = loss, stress = stress, RSS = RSS, TSS = TSS)
+}
+# if two way intersections missing, optimize mu to get Euclidean ditance
+solveWithMu <- function(ED, xy, combProp, ThreeD, radius, disProp,
+                        weight, Delta, method, firstGenerate,
+                        lower, upper, control, hessian, expand, scaleSeachTolerance,
+                        distanceTolerance, lossTolerance,
+                        stressBound, maximumStep, planeSize, twoWayGenerate) {
+  stress_0 <- calculateStress(xy = xy,radius = radius,disProp = disProp,weight = weight,ThreeD = ThreeD,
+                              planeSize = planeSize, twoWayGenerate = twoWayGenerate)$stress
+  mu_1_Stress <- findOptimalStress(lambda = 1, xy = xy, weight = weight,
+                                   radius = radius, disProp = disProp, ED = ED,
+                                   ThreeD = ThreeD, lossTolerance = lossTolerance,
+                                   planeSize = planeSize, twoWayGenerate = twoWayGenerate)
+  stress_1 <- mu_1_Stress$stress
+  if(min(stress_0,stress_1) != stress_0){
+    if(method[2] == "NelderMead"){
+      EDhat <- list()
+      Centre <- list()
+      EDplus <- newEuclideanDistance(firstGenerate = firstGenerate, mu = 1+Delta,
+                                     combProp = combProp, radius = radius, ThreeD = ThreeD,
+                                     expand = expand, distanceTolerance = distanceTolerance,
+                                     maximumStep = maximumStep)
+      mu_2_Stress <- findOptimalStress(lambda = 1, xy = xy, weight = weight,radius = radius, disProp = disProp,
+                                       ED = EDplus, ThreeD = ThreeD, lossTolerance = lossTolerance,
+                                       planeSize = planeSize, twoWayGenerate = twoWayGenerate)
+      EDplusplus <- newEuclideanDistance(firstGenerate = firstGenerate, mu = 1+2*Delta,
+                                         combProp = combProp, radius = radius, ThreeD = ThreeD,
+                                         expand = expand, distanceTolerance = distanceTolerance,
+                                         maximumStep = maximumStep)
+      mu_3_Stress <- findOptimalStress(lambda = 1, xy = xy, weight = weight,radius = radius, disProp = disProp,
+                                       ED = EDplusplus, ThreeD = ThreeD, lossTolerance = lossTolerance,
+                                       planeSize = planeSize, twoWayGenerate = twoWayGenerate)
+      Centre[[1]] <- mu_1_Stress$xy
+      Centre[[2]] <- mu_2_Stress$xy
+      Centre[[3]] <- mu_3_Stress$xy
+      EDhat[[1]] <- ED
+      EDhat[[2]] <- EDplus
+      EDhat[[3]] <- EDplusplus
+      STRESS <- c(stress_1, mu_2_Stress$stress, mu_3_Stress$stress)
+      ED <- EDhat[[which(STRESS == min(STRESS))[1]]]
+      centre <- Centre[[which(STRESS == min(STRESS))[1]]]
+      MU <- c(1,1+Delta,1+2*Delta)[order(STRESS)]
+      STRESS <- sort(STRESS)
+      count <- 0
+      while(count<maximumStep && min(STRESS)> stressBound) {
+        #reflection
+        count <- count+1
+        mu_0 <- mean(MU[1:2])
+        mu_R <- mu_0 + (mu_0 - MU[3])
+        EDreflection <- newEuclideanDistance(firstGenerate = firstGenerate, mu = mu_R,
+                                             combProp = combProp, radius = radius, ThreeD = ThreeD,
+                                             expand = expand,distanceTolerance = distanceTolerance,
+                                             maximumStep = maximumStep)
+        mu_R_stress <- findOptimalStress(lambda = 1, xy = xy, weight = weight, radius = radius, disProp = disProp,
+                                         ED = EDreflection,ThreeD = ThreeD, lossTolerance = lossTolerance,
+                                         planeSize = planeSize, twoWayGenerate = twoWayGenerate)
+        stress_R <- mu_R_stress$stress
+        #Reflection:
+        if(STRESS[1] <= stress_R &&  stress_R< STRESS[2]){
+          STRESS <- c(STRESS[1] , stress_R , STRESS[2])
+          MU <- c(MU[1], mu_R, MU[2])
+        }else if(stress_R < STRESS[1]){
+          #Expansion
+          centre <- mu_R_stress$xy
+          ED <- EDreflection
+          mu_E <- mu_0 + 2*(mu_R - mu_0)
+          EDexpansion <- newEuclideanDistance(firstGenerate = firstGenerate, mu = mu_E,
+                                              combProp = combProp, radius = radius, ThreeD = ThreeD,
+                                              expand = expand, distanceTolerance = distanceTolerance,
+                                              maximumStep = maximumStep)
+          mu_E_stress <- findOptimalStress(lambda = 1, xy = xy, weight = weight,
+                                           radius = radius, disProp = disProp, ED = EDexpansion,
+                                           ThreeD = ThreeD, lossTolerance = lossTolerance,
+                                           planeSize = planeSize, twoWayGenerate = twoWayGenerate)
+          stress_E <- mu_E_stress$stress
+          if(stress_E<stress_R){
+            STRESS <- c(stress_E , stress_R , STRESS[1])
+            MU <- c(mu_E, mu_R, MU[1])
+            ED <- EDexpansion
+            centre <- mu_E_stress$xy
+          }else if(stress_R<=stress_E && stress_E <STRESS[1]){
+            STRESS <- c(stress_R, stress_E, STRESS[1])
+            MU <- c(mu_R, mu_E, MU[1])
+          }
+          else if(STRESS[1]<=stress_E && stress_E <STRESS[2]){
+            STRESS <- c(stress_R, STRESS[1],stress_E)
+            MU <- c(mu_R, MU[1], mu_E)
+          }else{
+            STRESS <- c(stress_R, STRESS[1],STRESS[2])
+            MU <- c(mu_R, MU[1],MU[2])
+          }
+        }else if(stress_R >= STRESS[2]){
+          #Contraction
+          mu_C <-  mu_0 + 0.5*(MU[3] - mu_0)
+          EDcontraction <- newEuclideanDistance(firstGenerate = firstGenerate, mu = mu_C,
+                                                combProp = combProp,
+                                                radius = radius, ThreeD = ThreeD,
+                                                expand = expand, distanceTolerance = distanceTolerance,
+                                                maximumStep = maximumStep)
+          mu_C_stress <- findOptimalStress(lambda = 1, xy = xy, weight = weight,radius = radius, disProp = disProp,
+                                           ED = EDcontraction, ThreeD = ThreeD, lossTolerance = lossTolerance,
+                                           planeSize = planeSize, twoWayGenerate = twoWayGenerate)
+          stress_C <- mu_C_stress$stress
+          if (stress_C < STRESS[3]){
+            STRESS <- c(STRESS[1],STRESS[2],stress_C)
+            MU <- c(MU[1],MU[2],mu_E)[order(STRESS)]
+            STRESS <- sort(STRESS)
+            if(min(STRESS) == stress_C){
+              ED <- EDcontraction
+              centre <- mu_C_stress$xy}
+          }else{
+            #shrink
+            MU[2] <- (MU[1] + MU[2])/2
+            MU[3] <- (MU[1] + MU[3])/2
+          }
+        }
+        if(BoolScaleNMCpp( proportional = scaleSeachTolerance$ proportional,
+                           value = scaleSeachTolerance$value,
+                           LAMBDA = MU, STRESS = STRESS) == FALSE){break}
+      }
+      xy <- centre
+    } else if(method[2] == "lineSearch") {
+      stress_n <- stress_1
+      Center <- list()
+      Center[[1]] <- mu_1_Stress$xy
+      n <- 1
+      mu <- 1
+      EDhat <- list()
+      EDhat[[1]] <- ED
+      while (stress_n <= stress_1){
+        stress_1 <- stress_n
+        mu <- mu + Delta
+        ED <- newEuclideanDistance(firstGenerate = firstGenerate, mu = mu,
+                                   combProp = combProp, radius = radius, ThreeD = ThreeD,
+                                   expand = expand, distanceTolerance = distanceTolerance,
+                                   maximumStep = maximumStep)
+        L <- findOptimalStress(lambda = 1, xy = Center[[n]], weight = weight,
+                               radius = radius, disProp = disProp, ED = ED,
+                               ThreeD = ThreeD, lossTolerance = lossTolerance,
+                               planeSize = planeSize, twoWayGenerate = twoWayGenerate)
+        n <- n+1
+        stress_n <- L$stress
+        Center[[n]] <- L$xy
+        EDhat[[n]] <- ED
+      }
+      xy <- Center[[n-1]]
+      ED <- EDhat[[n-1]]
+    } else if(method[2] == "goldenSectionSearch"){
+      Optimization <- optimize(f = findOptimalStressMu, lower = lower[2], upper = upper[2],
+                               xy = mu_1_Stress$xy, weight = weight,
+                               firstGenerate = firstGenerate,combProp = combProp,
+                               radius = radius, disProp = disProp, ED = ED,ThreeD = ThreeD,
+                               expand = expand, lossTolerance = lossTolerance,
+                               distanceTolerance = distanceTolerance,
+                               maximumStep = maximumStep,
+                               planeSize = planeSize, twoWayGenerate = twoWayGenerate)
+      if(is.null(Optimization$minimum) || is.infinite(Optimization$minimum)){
+        stop("This method does not converge")
       }else{
-        if(is.null(arbitrary)){
-          set.seed("12345")
-          kk = floor(runif(1,1,m1+1))
-        }else{
-          kk = arbitrary
-        }
-        for (i in 1:m1){
-          for (j in 1:m1){
-            W[i,j] = (D[i,kk]^2+D[j,kk]^2-D[i,j]^2)/2
-          }
-        }
-        U = svd(W)$u
+        ED <- newEuclideanDistance(firstGenerate = firstGenerate, mu = Optimization$minimum,
+                                   combProp = combProp, radius = radius, ThreeD = ThreeD,
+                                   expand = expand, distanceTolerance = distanceTolerance,
+                                   maximumStep = maximumStep)
+        muStress <- findOptimalStress(lambda = 1, xy = mu_1_Stress$xy,weight = weight,
+                                      radius = radius, disProp = disProp, ED = ED,
+                                      ThreeD = ThreeD, lossTolerance = lossTolerance,
+                                      planeSize = planeSize, twoWayGenerate = twoWayGenerate)
+        xy <- muStress$xy
       }
-      #Standardize coordinates
-      if(ThreeD){
-        if (dim(U)[1]>=3){
-          xy = U[,1:3]
-        }else{
-          xy = cbind(U,rep(0,2))
-        }
+    }else{
+      Optimization <- optim(par = 1, fn = findOptimalStressMu,method = method[2],
+                            lower = lower[2], upper = upper[2],
+                            control = control, hessian = hessian[2],
+                            xy = mu_1_Stress$xy, weight = weight,
+                            firstGenerate = firstGenerate,combProp = combProp,
+                            radius = radius, disProp = disProp, ED = ED,ThreeD = ThreeD,
+                            expand = expand, lossTolerance = lossTolerance,
+                            distanceTolerance = distanceTolerance,
+                            maximumStep = maximumStep,
+                            planeSize = planeSize, twoWayGenerate = twoWayGenerate)
+      if(is.null(Optimization$apr) || is.infinite(Optimization$apr)){
+        stop("This method does not converge")
       }else{
-        xy = U[,1:2]
-        x = scale(xy[,1])
-        y = scale(xy[,2])
-        a1 = min(min(x-fitnumber*radius1),min(y-fitnumber*radius1))
-        a2 = max(max(x+fitnumber*radius1),max(y+fitnumber*radius1))
-        #Standardize Scale in (0,1) vs (0,1)
-        x = (x-a1)/(a2-a1)
-        y = (y-a1)/(a2-a1)
-        xy = cbind(x,y)
+        ED <- newEuclideanDistance(firstGenerate = firstGenerate, mu = Optimization$apr,
+                                   combProp = combProp, radius = radius, ThreeD = ThreeD,
+                                   expand = expand, distanceTolerance = distanceTolerance,
+                                   maximumStep = maximumStep)
+        L <- findOptimalStress(lambda = 1, xy = mu_1_Stress$xy,weight = weight,
+                               radius = radius, disProp = disProp, ED = ED,
+                               ThreeD = ThreeD, lossTolerance = lossTolerance,
+                               planeSize = planeSize, twoWayGenerate = twoWayGenerate)
+        xy <- L$xy
       }
-      L = LoopR(xy = xy, ALPHA = ALPHA, radius = radius1, ED = ED, ThreeD = ThreeD)
-      if (is.null(NAME)){name1 = name.dis1}else{name1 = NAME[group[[gn]]]}
-      groupxy[[gn]] = L$xy
-      radiusxy[[gn]] = radius1
-      namexy[[gn]] = name1
-      rownames(groupxy[[gn]]) = name1
-      lossnum = lossnum + L$f1
     }
   }
-  out = list(lossnum = lossnum, groupxy = groupxy, radiusxy = radiusxy, namexy = namexy)
+  list(xy = xy, ED = ED)
+}
+# draw sphere
+sphere = function(xy, radius, cols, alpha, oneWaySetName, smooth){
+  open3d()
+  if(smooth){
+    n <- dim(xy)[1]
+    f <- function(s, t) cbind(r * cos(s) * cos(t) + x0,
+                              r * sin(s) * cos(t) + y0,
+                              r * sin(t) + z0)
+    for(i in 1:n){
+      x0 = xy[i,1]
+      y0 = xy[i,2]
+      z0 = xy[i,3]
+      r = radius[i]
+      persp3d(f, slim = c(0, pi), tlim = c(0, 2*pi), n = 101, add = T, col = cols[i], alpha = alpha)
+    }
+  } else {
+    spheres3d(xy[,1], xy[,2], xy[,3], radius = radius,
+              color = cols, alpha = alpha)
+  }
+  text3d(xy[,1], xy[,2], xy[,3], oneWaySetName)
+}
+# if two way intersections missing, given mu to get a new Euclidean distance
+newEuclideanDistance <- function(firstGenerate, mu, combProp, radius, ThreeD, expand,
+                                 distanceTolerance, maximumStep){
+  disjointSetNames <- names(combProp)
+  numWays <- str_count(disjointSetNames,pattern = "&")+1
+  #one way set
+  oneWaySetName <- disjointSetNames[which(numWays==1)]
+  oneWaySet <- combProp[which(numWays==1)]
+  nextGenerate <- lapply(firstGenerate$New,
+                         function(a, oneWaySet, mu = mu){
+                           higherWay <- a[1];newGenerate <- a[-1]
+                           newGenerateName <- names(newGenerate)
+                           for(i in 1:length(newGenerate)){
+                             newGenerate[i] <- higherWay*mu^(str_count(names(higherWay),pattern = "&")+1-2)
+                             newGenerateNameSeparate <- str_split(newGenerateName,"&")[[i]]
+                             minOneWay <- min(oneWaySet[which((names(oneWaySet) %in% newGenerateNameSeparate) == TRUE)])
+                             if(newGenerate[i]> minOneWay){
+                               newGenerate[i] <- runif(1,min = higherWay,max = minOneWay)
+                             }
+                           }
+                           newGenerate
+                         }, oneWaySet = oneWaySet, mu = mu)
+  newTworWaySet <- c(combProp[which(numWays == 2)], unlist(nextGenerate))
+  EuclideanDistance(newTworWaySet = newTworWaySet,
+                    oneWaySetName = oneWaySetName, radius = radius,
+                    ThreeD = ThreeD, initial = FALSE, expand = expand,
+                    distanceTolerance = distanceTolerance, maximumStep = maximumStep)
 }
 
-MC = function(combinations = combinations,disjointcom = disjointcom, mu = mu){
-  mc = str_length(names(combinations))
-  joint2 = combinations[which(mc == 2)]
-  name.2 = names(joint2)
-  m3 = unique(mc)
-  m3 = m3[which(m3>2)]
-  resam = 0
-  for (i in 1:length(m3)){
-    new_joint = matrix(rep(0,10000),nrow = 2)
-    jointn = sort(combinations[which(mc == m3[i])],decreasing = T)
-    com = combn(m3[i],2)
-    L = dim(com)[2]
-    for (j in 1:length(jointn)){
-      for (k in 1:L){
-        name1 = str_split(names(jointn[j]),"")[[1]][com[,k]]
-        value_a = disjointcom[which(names(disjointcom)==name1[1])]
-        value_b = disjointcom[which(names(disjointcom)==name1[2])]
-        valuemin = min(value_a,value_b)
-        name2 = paste(name1,collapse="")
-        if(length(which(name.2==name2))==0){
-          resam = resam+1
-          if(jointn[j] == 0){
-            jointn[j] = min(disjointcom)*0.01
-          }
-          if((jointn[j]*mu^(m3[i]-2)) < valuemin){
-            new_joint[1,resam] = (jointn[j]*mu^(m3[i]-2))
-          }
-          else if(jointn[j]>valuemin){
-            stop("joint part cannot be larger than the whole part")
-          }
-          else{
-            new_joint[1,resam] = runif(1,jointn[j],valuemin)
-          }
-          new_joint[2,resam] = name2
-        }
-        else if(joint2[which(name.2==name2)]<jointn[j]){
-          stop("higher way intersection cannot be larger than lower way one")
-        }
-      }
-    }
-
-    new_joint = new_joint[which(new_joint!=0)]
-    joint_new = rep(0,length(new_joint)/2)
-    name.joint_new = rep(0,length(new_joint)/2)
-    for (i in 1:length(joint_new)){
-      joint_new[i] = as.numeric(new_joint[2*i-1])
-      name.joint_new[i] = new_joint[2*i]
-    }
-    names(joint_new) = name.joint_new
-    joint2 = c(joint2,joint_new)
-    name.2 = c(name.2,name.joint_new)
+# given lambda, optimize stress to get centres and corresponding values
+findOptimalStress <- function(lambda, xy, weight, radius, disProp, ED, ThreeD, lossTolerance, planeSize, twoWayGenerate){
+  if(is.null(lossTolerance$ALPHA)){
+    bool <- TRUE
+    #Just satisfy ``double'' input in Cpp; ALPHA will be generated through Newton method
+    ALPHA <- 0.01
+  } else{
+    bool <- FALSE
+    ALPHA <- lossTolerance$ALPHA
   }
-  combinations = c(disjointcom,joint2)
-  name = names(combinations)
-  mc = str_length(name)
-  name.joint = name[-which(mc==1)]
-  joint = combinations[-which(mc==1)]
-  ######################
-  if(any(is.na(name))){name = name[-which(is.na(name))]}
-  if(any(is.na(name.joint))){name.joint = name.joint[-which(is.na(name.joint))]}
-  if(any(is.na(joint))){joint = joint[-which(is.na(joint))]}
-  if(any(is.na(combinations))){combinations = combinations[-which(is.na(combinations))]}
-  if(any(is.na(mc))){mc = mc[-which(is.na(mc))]}
+  L <- lossCpp(xy = xy,radius = radius, lambda = lambda, ED = ED,
+               ThreeD = ThreeD, ToleranceofLoss = lossTolerance$ToleranceofLoss, maximumStep = lossTolerance$maximumStep,
+               ToleranceofStepsize = lossTolerance$ToleranceofStepsize,  proportional = lossTolerance$ proportional,
+               ALPHA = ALPHA, Bool = bool)
+  stressCalculation <- calculateStress(xy = L$xy,radius = radius,
+                                       disProp = disProp, weight = weight, ThreeD = ThreeD,
+                                       planeSize = planeSize, twoWayGenerate = twoWayGenerate)
+  stress <- stressCalculation$stress
+  RSS <- stressCalculation$RSS
+  TSS <- stressCalculation$TSS
+  ## Return a list
+  list(xy = L$xy, stress = stress, loss = L$loss, RSS = RSS, TSS = TSS)
+}
+# used in optim(...) or optimization(...) function, optimize lambda with minimum stress
+findOptimalStressLambda<- function(lambda, xy, weight, radius, disProp, ED, ThreeD, lossTolerance, planeSize, twoWayGenerate){
+  stressValues <- findOptimalStress(lambda = lambda, xy = xy,weight = weight,
+                                    radius = radius, disProp = disProp,
+                                    ED = ED,ThreeD = ThreeD, lossTolerance = lossTolerance,
+                                    planeSize = planeSize, twoWayGenerate = twoWayGenerate)
+  ## Return the stress only
+  stressValues$stress
 
-  out = list(name= name, name.joint = name.joint, joint = joint, combinations = combinations,mc = mc,resam = resam)
-  return(out)
+}
+# used in optim(...) or optimization(...) function, optimize mu with minimum stress
+findOptimalStressMu<- function(mu, xy, weight, firstGenerate, combProp, radius, disProp, ED,
+                               ThreeD, expand, lossTolerance, distanceTolerance, maximumStep, planeSize, twoWayGenerate){
+  ED <- newEuclideanDistance(firstGenerate = firstGenerate, mu = mu,
+                             combProp = combProp, radius = radius, ThreeD = ThreeD,
+                             expand = expand, distanceTolerance = distanceTolerance,
+                             maximumStep = maximumStep)
+  stressValues <- findOptimalStress(lambda = 1, xy = xy, weight = weight,
+                                    radius = radius, disProp = disProp, ED = ED,
+                                    ThreeD = ThreeD, lossTolerance = lossTolerance,
+                                    planeSize = planeSize, twoWayGenerate = twoWayGenerate)
+  ## Return the stress only
+  stressValues$stress
 }
 
-
-#transform disjoint
-disjoint.transform = function(combinations = NULL){
-  name = names(combinations)
-  mc = str_length(name)
-  combinations = combinations[order(mc)]
-  name = names(combinations)
-  mc = sort(mc)
-  if(max(mc)!=1){
-    for(i in 1:length(mc)){
-      if(mc[i] == max(mc)){break}else{
-        ma = sapply(str_split(names(combinations[-i]),pattern = ""),
-                    function(a){y = 0; if(all(str_split(names(combinations[i]),pattern = "")[[1]]%in%a)){y = 1};return(y)})
-        if(length(which(ma == 1))!=0){combinations[i] = combinations[i] + sum(combinations[-i][which(ma == 1)])}
+#transform disjointcombinations to not disjoint combinations
+disjoint2combinations <- function(combinations){
+  disjointSetNames <- names(combinations)
+  #numWays <- str_length(name)
+  numWays <- str_count(disjointSetNames,pattern = "&")+1
+  combinations <- combinations[order(numWays)]
+  numWays <- sort(numWays)
+  if(max(numWays)!=1){
+    for(i in 1:length(numWays)){
+      if(numWays[i] == max(numWays)){break} else {
+        Index <- sapply(str_split(names(combinations[-i]),pattern = "&"),
+                        function(a){bool <- 0;
+                        if(all(str_split(names(combinations[i]),pattern = "&")[[1]]%in%a))
+                        {bool <- 1};
+                        bool})
+        if(length(which(Index == 1))!=0){combinations[i] <- combinations[i] + sum(combinations[-i][which(Index == 1)])}
       }
     }
   }
-  return(combinations)
+
+  combinations
 }
 
-# If input is a data list
-datatocom = function(data = NULL){
-  com = t(combn(dim(data)[2],2))
-  letter = c(LETTERS,letters)
-  M = rep(0, dim(com)[1])
-  Names = rep(0, dim(com)[1])
-  for(j in 1:dim(com)[1]){
-    n = 0
-    for(i in 1:dim(data)[1]){
-      if(data[i,com[j,][1]] == 1 && data[i,com[j,][2]] == 1){
-        n = n+1
-      }
-    }
-    M[j] = n
-    Names[j] = paste(c(letter[com[j,][1]],letter[com[j,][2]]),collapse="")
+#reorder
+reorderDisjointCombinations <- function(combinations, disjoint.combinations){
+  m <- length(combinations)
+  newDisjointCombinations <- rep(0, m)
+  combinationsName <- names(combinations)
+  newOrder <- rep(0, m)
+  disjoint.combinationsName <- names(disjoint.combinations)
+  for(i in 1:m){
+    wayOrder <- which(disjoint.combinationsName%in%combinationsName[i] == TRUE)
+    newDisjointCombinations[i] <- disjoint.combinations[wayOrder]
+    newOrder[i] <- wayOrder
   }
-  names(M) = Names
-  tot = apply(data,2,"sum")
-  names(tot) = letter[1:dim(data)[2]]
-  combinations = c(tot, M)
-  if(is.null(names(data))){
-    Name = Names
-  }else{
-    Name = names(data)
-  }
+  names(newDisjointCombinations) <- combinationsName
+  list(newDisjointCombinations = newDisjointCombinations, newOrder = newOrder)
+}
 
-  out = list(combinations = combinations, Name = Name)
-  return(out)
+# If input is a data list(frame), extract combinations from it
+extractCombinations <- function(data, vars) {
+  data <- as.data.frame(data)
+  #turn character to numeric
+  if(is.null(vars)==FALSE){
+    allColName <- colnames(data)
+    vars <- match.arg(vars , allColName,several.ok = T)
+    data <- data[, which(allColName%in%vars) ]
+  }
+  if(is.null(dim(data))){
+    data <- as.data.frame(data)
+    colnames(data) <- vars
+  }
+  if(dim(data)[2] == 1){
+    warning("Meaningless factor data frame")
+  }
+  colReduceForSure <- rep(0,dim(data)[2])
+  for(i in 1:dim(data)[2]){
+    if(is.numeric(data[,i]) && all(unique(data[,i])%in%c(0,1)) == FALSE){
+      colReduceForSure[i] <- i
+    } else if(length(unique(data[,i])) == 1){
+      colReduceForSure[i] <- i
+    }
+  }
+  # get rid of some numeric columns
+  if(all(colReduceForSure==0)==FALSE){
+    colReduceForSure <- colReduceForSure[which(colReduceForSure!=0)]
+    data <- data[,-colReduceForSure]
+    warning(cat(paste("Non-factor column(s)",toString(colReduceForSure),
+                      "has(have) been ignored"), "\n"))
+  }
+  colName <- colnames(data)
+  n <- dim(data)[1]
+  p <- dim(data)[2]
+  colAdd <- list()
+  colReduce <- rep(0,p)
+  for(i in 1:p){
+    uniqueName <- unique(data[,i])
+    if(all(uniqueName%in%c(0,1))) {next
+    } else if (mode(levels(data[,i])) == "character"){
+      colReduce[i] <- i
+      newDataSet <- matrix(rep(0,n*length(uniqueName)),nrow = n)
+      for(j in 1:length(uniqueName)){
+        newDataSet[which(data[,i] == uniqueName[j]),j] <- 1
+      }
+      colnames(newDataSet) <- uniqueName
+      colAdd[[i]] <- newDataSet
+    }
+  }
+  colReduce <- colReduce[which(colReduce!=0)]
+  if(length(colReduce)!=0) {
+    newdata <- as.matrix(data[,-colReduce])
+    if(dim(newdata)[2] == 1){
+      colnames(newdata) <- colName[-colReduce]
+    }
+    for(i in 1:length(colAdd)){
+      colAddName <- colnames(colAdd[[i]])
+      sumAll <- apply(colAdd[[i]], 2, "sum")
+      deleteCol <- which(sumAll == min(sumAll))[1]
+      newInput <- as.matrix(colAdd[[i]][,-deleteCol])
+      if(dim(newInput)[2] == 1){
+        colnames(newInput) <- colAddName[-deleteCol]
+      }
+      newdata <- cbind(newdata, newInput)
+    }
+  } else {newdata <- data}
+  rowSumZero <- which(apply(newdata,1,"sum")==0)
+  if(length(rowSumZero)!=0){
+    newdata <- as.matrix(newdata[-which(apply(newdata,1,"sum")==0),])
+  }
+  if(dim(newdata)[2] == 1) {
+    disjoint.combinations <- c(sum(newdata))
+    names(disjoint.combinations) <- colnames(newdata)
+  } else {
+    #OUTCOME is not disjoint
+    G <- list()
+    for(i in 1:dim(newdata)[2]){
+      G[[i]] <- t(combn(dim(newdata)[2],i))
+    }
+    #OUTCOME is disjoint
+    newColName <- colnames(newdata)
+    nameList <- apply(newdata,1, function(a){paste(newColName[which(a==1)],collapse = "&")})
+    disjointOutput <- aggregate(data.frame(count = nameList), list(name = nameList), length)
+    disjoint.combinations <- disjointOutput[,2]
+    names(disjoint.combinations) <- disjointOutput[,1]
+    numWays <- str_count(disjointOutput[,1], pattern = "&")+1
+    oneWays <- which(numWays == 1)
+    if(length(oneWays) != length(newColName)){
+      notIn <- which(newColName %in% disjointOutput[,1][oneWays] == FALSE)
+      newIn <- rep(0, length(notIn))
+      names(newIn) <- newColName[notIn]
+      disjoint.combinations <- c(disjoint.combinations, newIn)
+    }
+  }
+  disjoint.combinations
 }
 
 # Calculates distance between two circles
-Distance = function(r1,r2,S,ThreeD = ThreeD){
-  theta1 = seq(0,pi, length = 100)
-  theta2 = seq(0,pi, length = 100)
+Distance <- function(r1,r2,S,ThreeD, expand, distanceTolerance, maximumStep) {
   if (ThreeD){
-    f1 = matrix(rep(pi/3*r2^3*(1-cos(theta2))^2*(2+cos(theta2)),100), nrow = 100, byrow = T) +
-      pi/3*r1^3*(1-cos(theta1))^2*(2+cos(theta1)) - S
-    f2 = matrix(rep(r1*sin(theta1),100), nrow = 100, byrow = T) - r2*sin(theta2)
+    if(S == 0){
+      if(is.null(expand)) {
+        d <- r1+r2
+      } else {
+        d <- (r1+r2)*expand
+      }
+    } else if(abs(S - min(4*pi/3*r1^3,4*pi/3*r2^3)) < distanceTolerance$value) {
+      d <- max(r1,r2) - min(r1,r2)
+    } else {
+      theta <- matrix(c(0,0),nrow = 2)
+      thetanew <- theta+1
+      f1 <- pi/3*r1^3*(1-cos(theta[1]))^2*(2+cos(theta[1])) +
+        pi/3*r2^3*(1-cos(theta[2]))^2*(2+cos(theta[2])) - S
+      f2 <- r1*sin(theta[1]) - r2*sin(theta[2])
+      k <- 0
+      while(k < maximumStep){
+        theta <- thetanew
+        f1 <- pi/3*r1^3*(1-cos(theta[1]))^2*(2+cos(theta[1])) +
+          pi/3*r2^3*(1-cos(theta[2]))^2*(2+cos(theta[2])) - S
+        f2 <- r1*sin(theta[1]) - r2*sin(theta[2])
+        f <- matrix(c(f1,f2),nrow = 2)
+        g <- matrix(c(pi*r1^3*sin(theta[1])^3, pi*r2^3*sin(theta[2])^3,
+                      r1*cos(theta[1]),-r2*cos(theta[2])),nrow = 2, byrow = T)
+        g <- solve(g)
+        thetanew <- theta - g%*%f
+        k <- k+1
+        if(BoolDistanceCpp( proportional = distanceTolerance$ proportional,
+                            value = distanceTolerance$value,
+                            f1 = f1, f2 = f2,
+                            thetanew = thetanew, theta = theta) == FALSE){break}
+      }
+      if(any(thetanew>pi) || any(thetanew<0) || k == maximumStep){
+        theta1 <- seq(0,pi, length = 200)
+        theta2 <- seq(0,pi, length = 200)
+        searchMatrix <- distanceCpp(r1, r2,theta1, theta2, S,ThreeD)
+        index <- which(searchMatrix== min(searchMatrix),arr.ind=T)[1,]
+        d <- r1*cos( theta1[index[1]]) + r2*cos(theta2[index[2]])
+      } else {
+        d <- r1*cos(thetanew[1]) + r2*cos(thetanew[2])
+      }
+    }
   }
   else{
-    f1 = matrix(rep(theta2*r2^2 - sin(2*theta2)*r2^2/2,100), nrow = 100, byrow = T) +
-      theta1*r1^2 - sin(2*theta1)*r1^2/2 - S
-    f2 = matrix(rep(r1*sin(theta1),100), nrow = 100, byrow = T) - r2*sin(theta2)
+    if(S==0){
+      if(is.null(expand)){
+        d <- r1+r2
+      } else {
+        d <- (r1+r2)*expand
+      }
+    }else if( abs(S - min(pi*r1^2,pi*r2^2)) < distanceTolerance$value ){
+      d <- max(r1,r2) - min(r1,r2)
+    }else{
+      theta <- matrix(c(0,0),nrow = 2)
+      thetanew <- theta+1
+      f1 <- theta[1]*r1^2 - sin(2*theta[1])*r1^2/2 +theta[2]*r2^2 - sin(2*theta[2])*r2^2/2  - S
+      f2 <- r1*sin(theta[1]) - r2*sin(theta[2])
+      k <- 0
+      while(k < maximumStep){
+        theta <- thetanew
+        f1 <- theta[2]*r2^2 - sin(2*theta[2])*r2^2/2 + theta[1]*r1^2 - sin(2*theta[1])*r1^2/2 - S
+        f2 <- r1*sin(theta[1]) - r2*sin(theta[2])
+        f <- matrix(c(f1,f2),nrow = 2)
+        g <- matrix(c(r1^2-r1^2*cos(2*theta[1]), r2^2-r2^2*cos(2*theta[2]),
+                      r1*cos(theta[1]),-r2*cos(theta[2])),nrow = 2, byrow = T)
+        g <- solve(g)
+        thetanew <- theta - g%*%f
+        k <- k+1
+        if(BoolDistanceCpp( proportional = distanceTolerance$ proportional,
+                            value = distanceTolerance$value,
+                            f1 = f1, f2 = f2,
+                            thetanew = thetanew, theta = theta) == FALSE){break}
+      }
+      if(any(thetanew>pi) || any(thetanew<0) || k == maximumStep){
+        theta1 <- seq(0,pi, length = 200)
+        theta2 <- seq(0,pi, length = 200)
+        searchMatrix <- distanceCpp(r1, r2,theta1, theta2, S,ThreeD)
+        index <- which(searchMatrix== min(searchMatrix),arr.ind=T)[1,]
+        d <- r1*cos( theta1[index[1]]) + r2*cos(theta2[index[2]])
+      } else {
+        d <- r1*cos(thetanew[1]) + r2*cos(thetanew[2])
+      }
+    }
   }
-  R = abs(f1) + abs(f2)
-  k = which(R== min(R),arr.ind=T)[1,]
-  d = r1*cos( theta1[k[1]]) + r2*cos(theta2[k[2]])
-  if (d==0){d=10}
   return(d)
 }
-
-# Separate each group
-M3 = function(i = i,clustermatrix = clustermatrix){
-  index = which(clustermatrix[i,]!= 0)
-  indexi = rep(0,length(index)+1)
-  while(length(index) != length(indexi)){
-    for(j in 1:length(index)){
-      if(j==1){indexi = index}
-      indexi = unique(c(indexi, which(clustermatrix[index[j],]!= 0)))
-    }
-    if(length(index) == length(indexi)){break}
-    else{
-      index=indexi
-      indexi = rep(0,length(index)+1)}
-  }
-  return(index)
-}
-RCH = function(name.joint, name.dis){
-  m = length(name.dis)
-  clustermatrix = matrix(rep(0,m*m),nrow = m)
-  for(i in 1:m){
-    namei = name.dis[i]
-    loca = unique(str_split(paste(name.joint[which(str_detect(name.joint,namei)==T)],
-                                  collapse=""),"")[[1]])
-    loca1 = rep(0,length(loca))
-    for(j in 1:length(loca)){
-      loca1[j] = which(name.dis == loca[j])
-    }
-    clustermatrix[i,loca1] = 1
-    if(clustermatrix[i,i] == 0){
-      clustermatrix[i,i] = 1
-    }
-  }
-  group = list()
-  for(i in 1:m){
-    if(i ==1){
-      index = M3(i, clustermatrix)
-      group[[i]] = sort(index)
-      ID = index
-      groupnum = i
-    }
-    else if(length(which(ID == i)) == 0){
-      index = M3(i, clustermatrix)
-      group[[groupnum+1]] = sort(index)
-      ID = c(ID,index)
-      groupnum = groupnum+1
-    }
-  }
-  return(group)
-}
-
 # Plots circles of Venn diagram
-circle.plot =  function(xy = NULL, radius =NULL,name = NULL, col = NULL, main=NULL, mar = NULL) {
+plotCircle <-  function(xy, radius,name, col, mar, ...) {
   par(mar = mar)
-  a1 =  range(c((xy + radius)[,1], (xy - radius)[,1]))
-  a2 = range(c((xy + radius)[,2], (xy - radius)[,2]))
+  a1 <-  range(c((xy + radius)[,1], (xy - radius)[,1]))
+  a2 <- range(c((xy + radius)[,2], (xy - radius)[,2]))
   plot.window(a1, a2, "", asp = 1)
-  theta = seq.int(360)/360*2*pi
+  theta <- seq.int(360)/360*2*pi
   for (i in 1:length(radius)){
     polygon(xy[i,1] +  radius[i]*cos(theta), xy[i,2] + radius[i]*sin(theta), col = col[i],border = col[i])
   }
   text(xy, name)
-  title(main = main)
 }
 
-Rotate = function(xy,transxy,radius1,radius2, delta){
+#rotate centres until two groups totally separated
+rotateCentres <- function(xy,transxy,radius1,radius2, delta){
   for(i in 1:35){
-    theta = i/18*pi
+    theta <- i/18*pi
     if(dim(xy)[2] == 3){
-      rotation1 = matrix(c(1,0,0,0,cos(theta),-sin(theta),0,sin(theta),cos(theta)),nrow = 3,byrow = T)
-      rotation2 = matrix(c(cos(theta),0,sin(theta),0,1,0,-sin(theta),0,cos(theta)),nrow = 3,byrow = T)
-      rotation3 = matrix(c(cos(theta),-sin(theta),0,sin(theta),cos(theta),0,0,0,1),nrow = 3,byrow = T)
-      rotation = rotation1%*%rotation2%*%rotation3}
+      rotation1 <- matrix(c(1,0,0,0,cos(theta),-sin(theta),0,sin(theta),cos(theta)),nrow = 3,byrow = T)
+      rotation2 <- matrix(c(cos(theta),0,sin(theta),0,1,0,-sin(theta),0,cos(theta)),nrow = 3,byrow = T)
+      rotation3 <- matrix(c(cos(theta),-sin(theta),0,sin(theta),cos(theta),0,0,0,1),nrow = 3,byrow = T)
+      rotation <- rotation1%*%rotation2%*%rotation3}
     else{
-      rotation = matrix(c(cos(theta),-sin(theta),sin(theta),cos(theta)),nrow = 2,byrow = T)
+      rotation <- matrix(c(cos(theta),-sin(theta),sin(theta),cos(theta)),nrow = 2,byrow = T)
     }
-    newxy = t(rotation%*%t(transxy))
-    newxy = t(transxy[1,] - newxy[1,] + t(newxy))
-    out = alldisR(xy,newxy,radius1,radius2, delta)
-    if (out!=0 ){break}
+    newxy <- t(rotation%*%t(transxy))
+    newxy <- t(transxy[1,] - newxy[1,] + t(newxy))
+    Judgement <- allDisjointCpp(xy,newxy,radius1,radius2, delta)
+    if (Judgement!=0 ){break}
   }
-  la = list(out =out, newxy = newxy, i =i)
-  return(la)
+  list(Judgement =Judgement, newxy = newxy)
 }
 
-EV3 = function(combinations = combinations, m =m, ThreeD = ThreeD, cols = cols, main = main, mar = mar,
-               fit = fit, name.dis = name.dis,delta = delta, NAME=NAME, alpha.col = alpha.col){
-  #Compute a and c
-  mc = str_length(names(combinations))
-  disjointcom = combinations[which(mc==1)]
-  a = combinations
-  for (j in 1:length(combinations)){
-    a[j] = combinations[j]/(sum(disjointcom))
-  }
-  #Get each circle's radius
-  if (ThreeD){
-    Area = a[which(mc==1)]
-    radius = (3*Area/(4*pi))^(1/3)
-  }else{
-    Area = a[which(mc==1)]
-    radius = sqrt(Area/pi)*fit
-    a = a*fit^2
-  }
-  if(ThreeD){
-    xy = matrix(rep(0,3),nrow = 1)
-    xy1 = matrix(rep(0,3),nrow = 1)
-  }else{
-    xy = matrix(rep(0,2),nrow = 1)
-    xy1 = matrix(rep(0,2),nrow = 1)
-  }
-  for(i in 1:(m-1)){
-    radiusvec = radius[i+1]
-    xyvec = transR(xy = xy, radius = radius[1:i], radiusvec = radiusvec, radiusall = radius)
-    xy = rbind(xy,xyvec)
-  }
-  rownames(xy) = name.dis
-  for(i in 1:(m-1)){
-    radiusvec = radius[i+1]
-    direc = -xy[i+1,]
-    direc = direc/sqrt(sum(direc^2))*delta/10
-    newxy = closeR(xy1,matrix(xy[i+1,],nrow=1),radius[1:i],radius[i+1],delta = delta,direc)$xy
-    xy1 = rbind(xy1,newxy)
-  }
-  if (is.null(NAME)){name = name.dis}else{name = NAME}
-  if(ThreeD){
-    open3d()
-    spheres3d(xy1[,1],xy1[,2],xy1[,3], radius = radius,
-              color = cols, alpha = alpha.col)
-    text3d(xy1[,1],xy1[,2],xy1[,3], name)
-  }
-  else{
-    plot.new()
-    circle.plot(xy1,radius,name = name, col = cols, main = main, mar = mar)
-  }
-  out = list(xy = xy1, radius = radius)
-  return(out)
-}
-
-
-QNC = function(groupnum = groupnum, groupxy = groupxy, radiusxy = radiusxy,radius = radius, delta = delta, namexy = namexy){
-  groupxylist = groupxy
-  radiusxylist = radiusxy
-  for (gn in 1:(groupnum-1)){
-    minx = which(groupxy[[gn+1]][,1] == min(groupxy[[gn+1]][,1]))
-    radiusvec = radiusxy[[gn+1]][minx]
-    xyvec = transR(xy = groupxy[[gn]], radius = radiusxy[[gn]], radiusvec = radiusvec, radiusall = radius)
-    #move
-    transxy = t(t(groupxy[[gn+1]]) + xyvec - groupxy[[gn+1]][minx,])
-    if(alldisR(groupxy[[gn]],transxy,radiusxy[[gn]],radiusxy[[gn+1]],delta) == 0){
-      out = Rotate(groupxy[[gn]],transxy,radius[[gn]],radius[[gn+1]],delta)
-      outr = out$out
-      newxy = out$newxy
-      while(outr == 0){
-        xyvec = transR(xy = groupxy[[gn]], radius = radiusxy[[gn]], radiusvec = radiusvec, radiusall = radius)
-        #move
-        transxy = t(t(groupxy[[gn+1]]) + xyvec - groupxy[[gn+1]][minx,])
-        out = Rotate(groupxy[[gn]],transxy,radius[[gn]],radius[[gn+1]],delta)
-        outr = out$out
-        newxy = out$newxy
-      }
-      rownames(newxy) = namexy[[gn+1]]
-    }else{newxy = transxy}
-    groupxy[[gn+1]] = rbind(groupxy[[gn]],newxy)
-    groupxylist[[gn+1]] = newxy
-    radiusxy[[gn+1]] = c(radiusxy[[gn]],radiusxy[[gn+1]])
-  }
-  for(gn in 1:(groupnum-1)){
-    center1 = rep(0,dim(groupxylist[[gn]])[2])
-    center2 = rep(0,dim(groupxylist[[gn+1]])[2])
-    for(j in 1:length(center1)){
-      center1[j] = (max(groupxylist[[gn]][,j]+radiusxylist[[gn]])+min(groupxylist[[gn]][,j]-radiusxylist[[gn]]))/2
-      center2[j] = (max(groupxylist[[gn+1]][,j]+radiusxylist[[gn+1]])+min(groupxylist[[gn+1]][,j]-radiusxylist[[gn+1]]))/2
-    }
-    direc = center1-center2
-    if(delta==0){delta=10^(-4)}
-    direc = direc/sqrt(sum(direc^2))*delta/10
-    newxy = closeR(groupxylist[[gn]],groupxylist[[gn+1]],radiusxylist[[gn]],radiusxylist[[gn+1]],delta = delta,direc)$xy
-    groupxylist[[gn+1]] = rbind(groupxylist[[gn]],newxy)
-    radiusxylist[[gn+1]] = c(radiusxylist[[gn]],radiusxylist[[gn+1]])
-    namexy[[gn+1]] = c(namexy[[gn]],namexy[[gn+1]])
-  }
-  out = list(groupxylist = groupxylist, radiusxylist = radiusxylist,namexy = namexy)
-  return(out)
-}
-
-DP = function(y = y, z=z, mu = mu, plus = plus){
-  name2 = names(y[which(z==2)])
-  n3 = y[which(z>2)]
-  if(length(name2) != 0 && length(n3) != 0){
-    n1 = y[which(z==1)]
-    n2 = NULL
-    name3 = names(n3)
-    for(i in 1:length(name3)){
-      x = rep(0,length(name2))
-      for(j in 1:length(name2)){
-        if(all(str_split(name2[j],pattern = "")[[1]]%in%str_split(name3[i],pattern = "")[[1]])){
-          x[j] = j
-        }
-      }
-      x = x[which(x!=0)]
-      if(length(x) == dim(combn(str_length(name3[i]),2))[2] && plus == TRUE){
-        nx = y[which(z==2)][x] + (mu-0.1)*n3[i]
-        if(any(nx>min(n1[which(names(n1)%in%str_split(names(nx),pattern = "")[[1]]==T)]))){
-          nx = y[which(z==2)][x]
-        }
-        n2 = c(n2,nx)
-      }else if(length(x) == dim(combn(str_length(name3[i]),2))[2] && plus == FALSE){
-        nx = y[which(z==2)][x] - (mu-0.1)*n3[i]
-        if(any(nx<n3[i])){
-          nx = y[which(z==2)][x]
-        }
-        n2 = c(n2,nx)
-      }
-    }
-    n2 = c(n2,y[which(z==2)][which(names(y[which(z==2)])%in%names(n2)==F)])
-    if(is.null(n2) == FALSE){
-      y = c(n1,n2,n3)
-    }
-  }
-  return(y)
-}
-
-#combinations separate
-STC = function(mu = mu, newcombinations = newcombinations, priority = priority,disjointcom = disjointcom,
-               combinations = combinations, group = NULL, plus = TRUE){
-  sepgroup = function(a,x=0, mu = mu, plus = plus){
-    y = name.dis[a]
-    for(i in 1:length(name)){
-      if(any(y%in%str_split(name[i],"")[[1]])){
-        y = c(y,name[i])
-      }
-    }
-    y = unique(y)
-    z = str_length(y)
-    y = combinations[which(name%in%y)]
-    if(x==0){y = DP(y=y,z=z, mu = mu, plus = plus)}
-    return(y)
-  }
-  mc = str_length(names(newcombinations))
-  name.dis = names(newcombinations)[which(mc==1)]
-  name.joint = names(newcombinations)[which(mc!=1)]
-  name = names(combinations)
-  if(is.null(group)){
-    group = RCH(name.joint = name.joint, name.dis= name.dis)
-    grouplength = do.call(c,lapply(group, length))
-    group = group[order(grouplength,decreasing = T)]
-    grouplength = do.call(c,lapply(group, length))
-    groupnum = length(group)
-    combinationsgroup = lapply(group, sepgroup, x = 1, mu = mu, plus = plus)
-    combinations = unlist(lapply(group, sepgroup,x = 0, mu = mu, plus = plus))
-    mc = str_length(names(combinations))
-    combinations = combinations[order(mc)]
-    mc = sort(mc)
-    out = MC(combinations = combinations,disjointcom = disjointcom,mu = mu)
-    name = out$name
-    name.joint = out$name.joint
-    joint = out$joint
-    newcombinations = out$combinations
-    newmc = out$mc
-    co = list(name = name, name.joint = name.joint, joint = joint, newcombinations = newcombinations, newmc = newmc,
-              combinationsgroup = combinationsgroup, combinations = combinations, mc = mc)
-  }else{
-    combinations = unlist(lapply(group, sepgroup,x = 0, mu = mu, plus = plus))
-    mc = str_length(names(combinations))
-    combinations = combinations[order(mc)]
-    mc = sort(mc)
-    out = MC(combinations = combinations,disjointcom = disjointcom,mu = mu)
-    name = out$name
-    name.joint = out$name.joint
-    joint = out$joint
-    newcombinations = out$combinations
-    newmc = out$mc
-    co = list(name = name, name.joint = name.joint, newcombinations = newcombinations, newmc = newmc,
-              combinations = combinations, mc = mc)
-  }
-  return(co)
-}
-
-pixel = function(xy = xy,radius = radius,num=100,combinations = combinations, weight = weight,priority = priority,
-                 name.priorityway = name.priorityway, i = i, priorityway = priorityway){
-  name = names(combinations)
-  name.dis = name[which(str_length(names(combinations))==1)]
-  m = length(name.dis)
-  l = list()
-  xuan = (max(xy[,1]) - min(xy[,1])+2*max(radius))/num
-  yuan = (max(xy[,2]) - min(xy[,2])+2*max(radius))/num
-  for (k in 1:m){
-    l[[k]] = listR1(matrix(rep(0,num^2),nrow =num),xy,radius,k,yuan,xuan,num=num)
-  }
-  M = listR2(myList =  l, m = m, num = num)
-  M = M[which(listR4(M)!=0),]
-  Me = matrix(unlist(unique(as.data.frame(M))),ncol = m)
-  Len_Me = listR3(M,Me)
-  names(Len_Me) = apply(Me,1,function(a){paste(name.dis[which(a!=0)],collapse="")})
-  Len_Me = Len_Me/sum(Len_Me)
-  mk = Len_Me[which(str_length(names(Len_Me))>=min(str_length(name.priorityway[[i]])))]
-  lo = 0
-  if(length(mk) !=0){
-    for(j in 1:length(mk)){
-      #weight
-      mb = which(priority == str_length(names(mk[j])))
-      if(length(mb)==1){
-        w = weight[mb]
-      }else{w = 1}
-      #loss
-      ma = sapply(str_split(names(mk[-j]),pattern = ""),
-                  function(a){y = 0; if(all(str_split(names(mk[j]),pattern = "")[[1]]%in%a)){y = 1};return(y)})
-      if(length(which(ma == 1))!=0){mk[j] = mk[j] + sum(mk[-j][which(ma == 1)])}
-      mb = which(names(priorityway[[i]])==names(mk[j]))
-      if(length(mb)!=0){
-        lo = lo + (priorityway[[i]][mb]-mk[j])^2*w
-      }else{
-        lo = lo + mk[j]^2*w
-      }
-    }
-  }else{
-    for(j in 1:length(priorityway[[i]])){
-      lo = lo + priorityway[[i]][j]^2*weight[which(priority%in%str_length(names(priorityway[[i]][j])))]
-    }
-  }
-  return(lo)
-}
-
-HH = function(combinations = combinations, disjointcom = disjointcom, priority = priority,
-              combinationsgroup = combinationsgroup, out2 = out2, weight = weight){
-  mc = str_length(names(combinations))
-  Losspriority = 0
-  truea = lapply(combinationsgroup,function(a){a/sum(disjointcom)})
-  priorityway = lapply(truea, function(a){a[which(str_length(names(a))%in%priority==TRUE)]})
-  name.priorityway =  lapply(priorityway, function(a){names(a)})
-  groupin = sapply(priorityway, function(a){y = 0;if(length(a)!=0){y = 1};return(y)})
-  nonzero = which(groupin!=0)
-  groupinxy = list()
-  for(i in 1:length(nonzero)){
-    Losspriority = Losspriority + pixel(xy = out2$groupxy[[nonzero[i]]], radius = out2$radiusxy[[nonzero[i]]], num = 100,
-                                        combinations = combinationsgroup[[nonzero[i]]], weight = weight,priority = priority,
-                                        name.priorityway = name.priorityway, i = i, priorityway = priorityway)
-  }
-  return(Losspriority)
-}
-
-areacompute = function(newcombinations = newcombinations, disjointcom = disjointcom,
-                       ThreeD = ThreeD, newmc = newmc, fit = fit){
-  a = newcombinations/sum(disjointcom)
-  #Get each circle's radius
-  if (ThreeD){
-    Area = a[which(newmc==1)]
-    radius = (3*Area/(4*pi))^(1/3)
-  }else{
-    Area = a[which(newmc==1)]
-    radius = sqrt(Area/pi)*fit
-    a = a*fit^2
-  }
-  joint.area = a[which(newmc!=1)]
-  Area = a[which(newmc==1)]
-  out = list(radius = radius, a = a, joint.area = joint.area, Area = Area)
-  return(out)
-}
-
-
-PAS = function(group = group, groupnum = groupnum, groupxy = groupxy, radiusxy = radiusxy, namexy = namexy,priority = priority,
-               weight = weight,newcombinations = newcombinations,NAME = NAME, ALPHA = ALPHA,fit = fit,area = area,ThreeD = ThreeD,
-               GRAM = GRAM, arbitrary = arbitrary, newcombinationsplus = newcombinationsplus, mu = mu, eq = eq,combinations = combinations,
-               newcombinationsminus = newcombinationsminus,disjointcom = disjointcom, newmc = newmc,
-               combinationsgroup = combinationsgroup, combinationsplus = combinationsplus, combinationsminus = combinationsminus){
-  NH = list()
-  fake1 = rep(0,40)
-  for(tu in 1:40){
-    if(tu ==1){
-      NH1 = list()
-      fake = rep(0,40)
-      for(fitnumber in 1:40){
-        out2 = DC(group = group, groupnum = groupnum, groupxy = groupxy, radiusxy = radiusxy, namexy = namexy,
-                  newcombinations = newcombinations,NAME = NAME, ALPHA = ALPHA,
-                  radius = area$radius, ThreeD = ThreeD, joint.area = area$joint.area, Area = area$Area,
-                  GRAM = GRAM, arbitrary = arbitrary, fitnumber = fitnumber)
-        lossnum = out2$lossnum
-        fake[fitnumber] = lossnum
-        NH1[[fitnumber]] = out2
-        if(fitnumber == 1){next}
-        else if(fake[fitnumber] >= fake[fitnumber-1]){out2 = NH1[[fitnumber-1]];break}
-        else{out2 = NH1[[fitnumber]];fitnumber = fitnumber+1}
-      }
-      #search deriction
-      if(eq == 1){
-        area = areacompute(newcombinations = newcombinationsplus, disjointcom = disjointcom, ThreeD = ThreeD,
-                           newmc = newmc, fit = fit)
-        out2plus = DC(group = group, groupnum = groupnum, groupxy = groupxy, radiusxy = radiusxy, namexy = namexy,
-                      newcombinations = newcombinationsplus, NAME = NAME, ALPHA = ALPHA,
-                      radius = area$radius, ThreeD = ThreeD, joint.area = area$joint.area, Area = area$Area,
-                      GRAM = GRAM, arbitrary = arbitrary, fitnumber = fitnumber-1)
-        area = areacompute(newcombinations = newcombinationsminus, disjointcom = disjointcom, ThreeD = ThreeD,
-                           newmc = newmc, fit = fit)
-        out2minus = DC(group = group, groupnum = groupnum, groupxy = groupxy, radiusxy = radiusxy, namexy = namexy,
-                       newcombinations = newcombinationsminus, NAME = NAME, ALPHA = ALPHA,
-                       radius = area$radius, ThreeD = ThreeD, joint.area = area$joint.area, Area = area$Area,
-                       GRAM = GRAM, arbitrary = arbitrary, fitnumber = fitnumber-1)
-        ff1 = HH(combinations = combinations, disjointcom = disjointcom, priority = priority,
-                 combinationsgroup = combinationsgroup, out2 = out2plus, weight = weight)
-        ff2 = HH(combinations = combinations, disjointcom = disjointcom, priority = priority,
-                 combinationsgroup = combinationsgroup, out2 = out2minus, weight = weight)
-        ff3 = HH(combinations = combinations, disjointcom = disjointcom, priority = priority,
-                 combinationsgroup = combinationsgroup, out2 = out2, weight = weight)
-        if(ff3<=ff1 && ff3<=ff2){fake1[tu] = ff3;break}else if(ff1<ff2){combinations1 = combinationsplus;plus = T;
-        newcombinations = newcombinationsplus;fake1[tu] = ff1;
-        }else{combinations1 = combinationsminus;plus = F;newcombinations = newcombinationsminus;fake1[tu] = ff2}
-      }else{fake1[tu] = HH(combinations = combinations, disjointcom = disjointcom, priority = priority,
-                           combinationsgroup = combinationsgroup, out2 = out2, weight = weight)};
-      NH[[tu]] = out2
+# after finding centres, combine them with reasonable distance
+combineGroups <- function(groupCentre, radiusGroup, delta){
+  groupNum <- length(groupCentre)
+  radius <- unlist(radiusGroup)
+  namexy <- lapply(radiusGroup,
+                   function(a){
+                     names(a)
+                   })
+  groupxy <- groupCentre
+  radiusxy <- radiusGroup
+  for (gn in 1:(groupNum-1)){
+    #Randomly find a minimum x, minimum y, maximum x, or maximum y of the second group
+    cornerrandom = ceiling(runif(1,0,4))
+    if(cornerrandom == 1){
+      corner <- which(groupCentre[[gn+1]][,1] == min(groupCentre[[gn+1]][,1]))[1]
+    }else if(cornerrandom == 2){
+      corner <- which(groupCentre[[gn+1]][,1] == max(groupCentre[[gn+1]][,1]))[1]
+    }else if(cornerrandom == 3){
+      corner <- which(groupCentre[[gn+1]][,2] == min(groupCentre[[gn+1]][,2]))[1]
     }else{
-      mu = mu + 0.1
-      if(eq == 1){
-        out1 = STC(mu = mu, newcombinations = newcombinations, priority = priority,disjointcom = disjointcom,
-                   combinations = combinations1, group = group, plus = plus)
-        combinations1 = out1$combinations
-        newcombinations = out1$newcombinations
-        newmc = out1$newmc
-      }else{
-        out = MC(combinations = combinations,disjointcom = disjointcom,mu = mu)
-        newcombinations = out$combinations
-        newmc = out$mc
-      }
-      area = areacompute(newcombinations = newcombinations, disjointcom = disjointcom,
-                         ThreeD = ThreeD, newmc = newmc, fit = fit)
-      out2 = DC(group = group, groupnum = groupnum, groupxy = groupxy, radiusxy = radiusxy, namexy = namexy,
-                newcombinations = newcombinations,NAME = NAME, ALPHA = ALPHA,
-                radius = area$radius, ThreeD = ThreeD, joint.area = area$joint.area, Area = area$Area,
-                GRAM = GRAM, arbitrary = arbitrary, fitnumber = fitnumber - 1)
-      fake1[tu] = HH(combinations = combinations, disjointcom = disjointcom, priority = priority,
-                     combinationsgroup = combinationsgroup, out2 = out2, weight = weight)
+      corner <- which(groupCentre[[gn+1]][,2] == max(groupCentre[[gn+1]][,2]))[1]
     }
-    NH[[tu]] = out2
-    if(tu==1 || tu==2){next}
-    else if(fake1[tu] >= fake1[tu-1]){out2 = NH[[tu-1]];break}else{out2 = NH[[tu]]}
+    #corresponding radius
+    radiusvec <- radiusGroup[[gn+1]][corner]
+    #generate a centre to check which can make this centre is totally disjoint with the former group
+    xyvec <- transCpp(xy = groupCentre[[gn]], radius = radiusGroup[[gn]], radiusvec = radiusvec, radiusall = radius)
+    #move the second group
+    transxy <- t(t(groupCentre[[gn+1]]) + xyvec - groupCentre[[gn+1]][corner,])
+    #If two groups are totally seperated
+    if(allDisjointCpp(groupCentre[[gn]],transxy,radiusGroup[[gn]],radiusGroup[[gn+1]],delta) == 0){
+      out <- rotateCentres(groupCentre[[gn]],transxy,radiusGroup[[gn]],radiusGroup[[gn+1]],delta)
+      Judgement <- out$Judgement
+      newxy <- out$newxy
+      while(Judgement == 0){
+        xyvec <- transCpp(xy = groupCentre[[gn]], radius = radiusGroup[[gn]],
+                          radiusvec = radiusvec, radiusall = radius)
+        transxy <- t(t(groupCentre[[gn+1]]) + xyvec - groupCentre[[gn+1]][corner,])
+        out <- rotateCentres(groupCentre[[gn]],transxy,radius[[gn]],radius[[gn+1]],delta)
+        Judgement <- out$Judgement
+        newxy <- out$newxy
+      }
+      rownames(newxy) <- namexy[[gn+1]]
+    }else{newxy <- transxy}
+    #renew the second group centre
+    groupxy[[gn+1]] <- newxy
   }
-  if(tu == 1){weighted.least.square = fake1[tu]}else{weighted.least.square = fake1[tu-1]}
-  out = list(weighted.least.square = weighted.least.square, out2 = out2)
-  return(out)
+  #Move the last group to the former one with reasonable distance
+  for(gn in 1:(groupNum-1)){
+    center1 <- rep(0,dim(groupxy[[gn]])[2])
+    center2 <- rep(0,dim(groupxy[[gn+1]])[2])
+    for(j in 1:length(center1)){
+      center1[j] <- (max(groupxy[[gn]][,j]+radiusxy[[gn]])+
+                       min(groupxy[[gn]][,j]-radiusxy[[gn]]))/2
+      center2[j] <- (max(groupxy[[gn+1]][,j]+radiusxy[[gn+1]])+
+                       min(groupxy[[gn+1]][,j]-radiusxy[[gn+1]]))/2
+    }
+    direction <- center1-center2
+    if(delta==0){delta <- (1e-4)}
+    # scale it
+    direction <- direction/sqrt(sum(direction^2))*delta/10
+    newxy <- closeCpp(groupxy[[gn]],groupxy[[gn+1]],radiusxy[[gn]],
+                      radiusxy[[gn+1]],delta = delta,direction)$xy
+    groupxy[[gn+1]] <- rbind(groupxy[[gn]],newxy)
+    radiusxy[[gn+1]] <- c(radiusxy[[gn]],radiusxy[[gn+1]])
+    namexy[[gn+1]] <- c(namexy[[gn]],namexy[[gn+1]])
+  }
+  list(xy = groupxy[[groupNum]], radius = radiusxy[[groupNum]],namexy = namexy[[groupNum]])
 }
+
+#given centres, numerically calculate each disjoint part's area and return stress
+calculateStress <- function(xy, radius, disProp, weight, ThreeD, planeSize, twoWayGenerate){
+  m <- length(radius)
+  l <- list()
+  oneWaySetName <- names(radius)
+  if(ThreeD){
+    xuan <- (max(xy[,1]) - min(xy[,1])+2*max(radius))/planeSize
+    yuan <- (max(xy[,2]) - min(xy[,2])+2*max(radius))/planeSize
+    zuan <- (max(xy[,3]) - min(xy[,3])+2*max(radius))/planeSize
+    myList <- list()
+    for(k in 1:m){
+      for(i in 1:planeSize){
+        myList[[i]] <- matrix(rep(0,planeSize^2),nrow =planeSize)
+      }
+      l[[k]] <- binaryIndexThreeDCpp(myList, xy, radius,k ,yuan, xuan, zuan, planeSize)
+    }
+    numericArea <- goThroughPixelThreeDCpp(l, m, planeSize)
+  }else{
+    xuan <- (max(xy[,1]) - min(xy[,1])+2*max(radius))/planeSize
+    yuan <- (max(xy[,2]) - min(xy[,2])+2*max(radius))/planeSize
+    for (k in 1:m){
+      l[[k]] <- binaryIndexCpp(matrix(rep(0,planeSize^2),nrow =planeSize),xy,radius,k,yuan,xuan, planeSize)
+    }
+    numericArea <- goThroughPixelCpp(myList =  l, m = m, num = planeSize)
+  }
+  if(m == 1){
+    TSS <- (sum(numericArea)/(planeSize*planeSize))^2*weight
+    RSS <- 0
+    stress <- 0
+  } else {
+    numericArea <- numericArea[which(getRidofZeroCpp(numericArea)!=0),]
+    numericAreaMatrix <- matrix(unlist(unique(as.data.frame(numericArea))),ncol = m)
+    numericAreaVector <- countCpp(numericArea,numericAreaMatrix)
+    numericAreaVectorName <- apply(numericAreaMatrix,1,
+                                   function(a, oneWaySetName)
+                                   {paste(oneWaySetName[which(a!=0)],collapse="&")
+                                   }, oneWaySetName = oneWaySetName)
+    names(numericAreaVector) <- numericAreaVectorName
+    lengthDisProp <- length(disProp)
+    cstar <- rep(0, lengthDisProp)
+    astar <- disProp
+    wstar <- weight
+    lengthNumericAreaVector <- length(numericAreaVector)
+    numericAreaVectorIndex <- rep(0,lengthDisProp)
+    numericAreaVectorNameSplit <- str_split(numericAreaVectorName,pattern = "&")
+    for(i in 1:lengthDisProp){
+      splitDisPropName <- str_split(names(disProp),pattern = "&")[[i]]
+      index <- 0
+      for (j in 1:lengthNumericAreaVector){
+        if(j %in% numericAreaVectorIndex) {next}
+        if(all(numericAreaVectorNameSplit[[j]] %in% splitDisPropName,
+               length(numericAreaVectorNameSplit[[j]]) == length(splitDisPropName))){
+          index <- j
+          numericAreaVectorIndex[i] <- index
+          break
+        }
+      }
+      if(index != 0){
+        cstar[i] <- numericAreaVector[index]
+      }
+    }
+    unnecessaryOverlayIndex <- which(c(1:lengthNumericAreaVector) %in% numericAreaVectorIndex == FALSE)
+    lengthofThisIndex <- length(unnecessaryOverlayIndex)
+    if(lengthofThisIndex != 0 && twoWayGenerate == FALSE){
+      cstar <- c(cstar, numericAreaVector[unnecessaryOverlayIndex])
+      astar <- c(disProp, rep(0, lengthofThisIndex))
+      wstar <- c(weight, rep(1, lengthofThisIndex))
+    }
+    fit <- lm(cstar~astar-1, weights = wstar)
+    RSS <- sum(fit$residuals^2*wstar)
+    TSS <- sum(cstar^2*wstar)
+    stress <- RSS/TSS
+  }
+  list(stress = stress, RSS = RSS, TSS = TSS)
+}
+
+#given combinations, detect groups
+groupDetection <- function(largerThanOneWaySetName, oneWaySetName){
+  vertex <- list()
+  if(is.null(largerThanOneWaySetName)){
+    for(i in 1:length(oneWaySetName)){
+      vertex[[i]] <- i
+    }
+  } else {
+    largerThanOneWaySetLength <- length(largerThanOneWaySetName)
+    for(i in 1:largerThanOneWaySetLength){
+      Boolean1 <- rep(FALSE, largerThanOneWaySetLength)
+      for(j in i:largerThanOneWaySetLength){
+        Boolean1[j] <- any((str_split(largerThanOneWaySetName[i],"&")[[1]] %in% str_split(largerThanOneWaySetName[j],"&")[[1]])==TRUE)
+      }
+      Boolean1True <- which(Boolean1 == TRUE)
+      vertex[[i]] <- unique(unlist(str_split(largerThanOneWaySetName[Boolean1True],"&")))
+      if(i >1){
+        Boolean2 <- rep(FALSE, i-1)
+        for(j in 1:(i-1)){
+          Boolean2[j] <- any((vertex[[i]]%in%vertex[[j]])==TRUE)
+        }
+        Boolean2True <- which(Boolean2 == TRUE)
+        if(length(Boolean2True) == 1){
+          vertex[[Boolean2True]] <- unique(c(vertex[[Boolean2True]],vertex[[i]]))
+          vertex[[i]] <- NULL
+        }
+      }
+    }
+    if(length(which(sapply(vertex, is.null)))!=0){  vertex <- vertex[-which(sapply(vertex, is.null))]}
+    vertexLength <- length(vertex)
+    if(length(unlist(vertex)) != length(oneWaySetName)){
+      difference <- length(oneWaySetName) - length(unlist(vertex))
+      rest <- oneWaySetName[which((oneWaySetName%in%unlist(vertex))== FALSE)]
+      for(i in 1:difference){
+        vertex[[i+vertexLength]] <- rest[i]
+      }
+    }
+    vertex <- lapply(vertex,
+                     function(a,oneWaySetName){
+                       which((oneWaySetName%in%a)==TRUE)
+                     }, oneWaySetName = oneWaySetName)
+  }
+  vertex
+}
+# if two way intersections are missing, generate them
+twoWayGeneration <- function(combProp, mu){
+
+  #numWays <- str_length(names(combProp))
+  numWays <- str_count(names(combProp),pattern = "&")+1
+  oneWaySet <- combProp[which(numWays==1)]
+  twoWaySet <- combProp[which(numWays == 2)]
+  twoWaySetName <- names(twoWaySet)
+  #highWay gives way larger than 2
+  highWaySet <- sort(combProp[which(numWays > 2)],decreasing = T)
+  highWaySetName <- names(highWaySet)
+
+  highWays <- str_count(highWaySetName,pattern = "&")+1
+  resam <- 0
+  New <- list()
+  newName <- c()
+  for (i in 1:length(highWays)){
+    com <- combn(highWays[i],2)
+    L <- dim(com)[2]
+    newTwoWaySet <- rep(0,1e5)
+    newTwoWaySetName <- rep(0,1e5)
+    for (j in 1:L){
+      highWaySetNameSplit <- str_split(highWaySetName[i],"&")[[1]][com[,j]]
+      value_a <- oneWaySet[which(names(oneWaySet)==highWaySetNameSplit[1])]
+      value_b <- oneWaySet[which(names(oneWaySet)==highWaySetNameSplit[2])]
+      valuemin <- min(value_a,value_b)
+      highWaySetNamePaste <- paste(highWaySetNameSplit,collapse="&")
+      highWaySetNamePasteReorder <- paste(c(highWaySetNameSplit[2], highWaySetNameSplit[1]),collapse="&")
+      bool1 <- any( highWaySetNamePaste %in% twoWaySetName, highWaySetNamePasteReorder%in%twoWaySetName)
+      if(bool1 == FALSE){
+        bool2 <- any( highWaySetNamePaste %in% newName, highWaySetNamePasteReorder %in% newName )
+        if(bool2 == FALSE){
+          resam <- resam+1
+          newName[2*resam - 1] <- highWaySetNamePaste
+          newName[2*resam] <- highWaySetNamePasteReorder
+
+          if(highWaySet[i] == 0){
+            highWaySet[i] <- min(highWaySet[which(highWaySet!=0)])*0.01
+          }
+          if((highWaySet[i]*mu^(highWays[i]-2)) < valuemin){
+            newTwoWaySet[resam] <- (highWaySet[i]*mu^(highWays[i]-2))
+          }else{
+            newTwoWaySet[resam] <- runif(1,highWaySet[i],valuemin)
+          }
+          newTwoWaySetName[resam] <- highWaySetNamePaste
+        }
+      }
+    }
+    newTwoWayIndex <- which(newTwoWaySet!=0)
+    newTwoWaySet <- newTwoWaySet[newTwoWayIndex]
+    if(length(newTwoWaySet) != 0){
+      newTwoWaySetName <- newTwoWaySetName[newTwoWayIndex]
+      names(newTwoWaySet) <- newTwoWaySetName
+      New[[i]] <- c(highWaySet[i], newTwoWaySet)
+    }
+  }
+  if(length(New)== 0){
+    newTwoWaySet <- twoWaySet
+  } else {
+    anyNullList <- which(sapply(New, is.null))
+    if(length(anyNullList) !=0 ){
+      New <- New[-anyNullList]
+    }
+
+    newHighWaySet <- unlist(New)
+    if(any(is.na(newHighWaySet))){newHighWaySet <- newHighWaySet[-which(is.na(newHighWaySet))]}
+    numWays <- str_count(names(newHighWaySet),pattern = "&")+1
+    newTwoWaySet <- c(twoWaySet, newHighWaySet[which(numWays == 2)])
+  }
+  list(newTworWaySet = newTwoWaySet, resam = resam, New = New)
+}
+
+#calculate Euclidean distance matrix and intial location (based on Gram matrix)
+EuclideanDistance <- function(newTworWaySet, oneWaySetName, radius, ThreeD, initial, expand, distanceTolerance,
+                              maximumStep){
+  m <- length(oneWaySetName)
+  newTworWaySetName <- names(newTworWaySet)
+  ED <- matrix(rep(0, m^2),ncol = m)
+  for(i in 1:m){
+    for(j in i:m){
+      if(j == i){next}else{
+        sij1 <- newTworWaySet[which(newTworWaySetName == paste(c(oneWaySetName[i],oneWaySetName[j]),collapse = "&"))]
+        sij2 <- newTworWaySet[which(newTworWaySetName == paste(c(oneWaySetName[j],oneWaySetName[i]),collapse = "&"))]
+        if(length(sij1) == 0 && length(sij2) == 0 ){
+          sij <- 0
+        } else { sij <-  c(sij1,sij2) }
+        ED[i,j] <- Distance(radius[i], radius[j], sij, ThreeD = ThreeD, expand = expand,
+                            distanceTolerance = distanceTolerance, maximumStep = maximumStep)
+      }
+    }
+  }
+  ED <- ED + t(ED)
+  rownames(ED) <- oneWaySetName
+  colnames(ED) <- oneWaySetName
+  if(initial == TRUE){
+    D2 <- ED^2
+    J <- diag(m)-1/m
+    G <- -0.5*J%*%D2%*%J
+    Em <- svd(G)
+    U <- (Em$u) %*% sqrt(diag(Em$d))
+    if(ThreeD){
+      if (dim(U)[1]>=3){xy <- U[,1:3]
+      }else{xy <- cbind(U,rep(0,2))}
+    }else{
+      xy <- U[,1:2]
+    }
+    step <- 1
+    while((allConnectedCpp(xy,radius,ThreeD) == F)){
+      meanvec <- apply(xy,2,"mean")
+      deriction <- t(t(xy) - meanvec)
+      xy <- xy - 0.1*step*deriction
+      step <- step + 1
+    }
+    out <- list(ED = ED, xy = xy)
+  }else{out <- ED}
+  out
+}
+

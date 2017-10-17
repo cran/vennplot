@@ -2,103 +2,105 @@
 % Please edit documentation in R/vennplot.R
 \name{vennplot}
 \alias{vennplot}
-\title{Draw Venn diagram in 2D or 3D}
+\title{Draw Venn and Euler diagram in 2D or 3D}
 \usage{
-vennplot(combinations = NULL, fit = 0.5, GRAM = T, main = NULL,
-  arbitrary = NULL, mu = 2, NAME = NULL, ALPHA = 10^(-5),
-  alpha.col = 0.3, disjoint = F, ThreeD = FALSE, delta = 0.01,
-  mar = rep(1, 4), priority = 2, weight = rep(1, length(priority)))
+vennplot(disjoint.combinations = NULL, vars = NULL, Delta = 0.1,
+  ThreeD = FALSE, lambda = NULL, stressWay = c("sum", "combine"),
+  delta = 0.01, weight = NULL, expand = NULL, twoWayGenerate = FALSE,
+  scaleSearch = c("NelderMead", "lineSearch", "goldenSectionSearch", "BFGS",
+  "CG", "L-BFGS-B", "SANN", "Brent"), twoWaySearch = c("lineSearch",
+  "NelderMead", "goldenSectionSearch", "BFGS", "CG", "L-BFGS-B", "SANN",
+  "Brent"), scaleSeachTolerance = list(value = 1e-05, proportional = FALSE),
+  distanceTolerance = list(value = 1e-05, proportional = FALSE),
+  lossTolerance = list(ToleranceofLoss = 1e-10, maximumStep = 10, ALPHA =
+  0.01, ToleranceofStepsize = 1e-05, proportional = FALSE),
+  stressBound = 0.001, maximumStep = 50, planeSize = 50, lower = -Inf,
+  upper = Inf, control = list(), hessian = FALSE, mar = rep(1, 4),
+  cols = NULL, alpha = 0.3, smooth = FALSE, ...)
 }
 \arguments{
-\item{combinations}{Named numeric vector or data.frame where each row is a logical vector indicating set membership.  See Details.}
+\item{disjoint.combinations}{Named numeric vector or data.frame where each column should be factor.  See Details.}
 
-\item{fit}{Scaling of semi-diameters; a scalar between 0.5 and 1.}
+\item{vars}{Extract specific variables of data.frame as \code{disjoint.combinations}. If \code{vars = NULL}, all the information of data.frame will be extracted.}
 
-\item{GRAM}{If \code{TRUE}, use the centralized GRAM matrix as the initial location.  Otherwise use the center of an arbitrary circle.}
-
-\item{main}{Title of 2D plot.}
-
-\item{arbitrary}{When \code{GRAM = FALSE}, an integer designating which circle to use for inital location, or \code{NULL} to use a random circle.  Argument is ignored when \code{GRAM = TRUE}.}
-
-\item{mu}{Generates defaults for unspecificed two-way intersections.  See Details.}
-
-\item{NAME}{The name of each circle. See Examples.}
-
-\item{ALPHA}{Size of steepest descent.}
-
-\item{alpha.col}{Color darkness.}
-
-\item{disjoint}{If \code{TRUE} plots only the disjoint part of overlapping circles.}
+\item{Delta}{The length of step for method "lineSearch" or the initial interval of test points for method "NelderMead".}
 
 \item{ThreeD}{Draw Venn diagram in 3D. See Examples.}
 
-\item{delta}{Closeness betwen connected components.}
+\item{lambda}{It can be \code{NULL} or a numeric vector. If \code{lambda = NULL}, the loss function optimize lambda, else, based on the given lambda, loss function will calculate stress respectively then return the minimum one and corresponding lambdas.}
+
+\item{stressWay}{If data set can be separated into a few groups, there will be two ways to express stress: one is to sum up all the stress (named "sum"; default), the other is to use total TSS divide by total RSS (named "combine").}
+
+\item{delta}{Closeness between groups.}
+
+\item{weight}{The weight of \code{disjoint.combinations}. It should have the same length with \code{disjoint.combinations}.}
+
+\item{expand}{If some balls should not intersect and the code fails to detect it. It is possible to be fixed manually but sacrificing stress.}
+
+\item{twoWayGenerate}{Boolean factor, if false, any missing intersections are set as zero.}
+
+\item{scaleSearch}{Provide multiple methods to optimize scale lambda. The default method is "NelderMead". See Details.}
+
+\item{twoWaySearch}{If two way intersections are missing, multiple methods are available to generate two way intersections. The default method is "lineSearch". See Details.}
+
+\item{scaleSeachTolerance}{A list with tolerance value and boolean factor " proportional". The loop of NelderMead and lineSearch in scaleSearch will end when the difference or  proportional difference matches the tolerance value.}
+
+\item{distanceTolerance}{A list with tolerance value and boolean factor " proportional". The Newton method of finding distance will end when the difference or  proportional difference matches the tolerance value.}
+
+\item{lossTolerance}{A list with ToleranceofLoss, maximumStep, ALPHA, ToleranceofStepsize and boolean factor "proportional". If ALPHA is null, the step size will be searched through Newton method and it will stop when step reaches the maximum step or the difference matches ToleranceofStepsize; else step size will be fixed with ALPHA . The loss will end when the difference or proportional difference or the total loss value matches the "ToleranceofLoss".}
+
+\item{stressBound}{The loop of method NelderMead will stop when stress is beyond the stressBound.}
+
+\item{maximumStep}{The maximum searching step for method NelderMead and Newton method of calculating distance.}
+
+\item{planeSize}{The plane size of calculating disjoint intersections numerically.}
+
+\item{lower}{The lower bound of the interval to be searched for the "goldenSectionSearch" and "L-BFGS-B". See Details.}
+
+\item{upper}{The upper bound of the interval to be searched for the "goldenSectionSearch" and "Brent". See Details.}
+
+\item{control}{A list of control parameters. See Details}
+
+\item{hessian}{Logical. A numerically differentiated Hessian matrix be returned or not. See Details.}
 
 \item{mar}{Plot margins.}
 
-\item{priority}{Scalar or vector specifying the fitting priority for intersections.  See Examples.}
+\item{cols}{Color of balls. If \code{NULL}, rainbow color will be set.}
 
-\item{weight}{Priority weights.  Must the the same length as \code{priority}.  See Examples.}
+\item{alpha}{Color darkness.}
+
+\item{smooth}{For 3D plot, if true, the balls will be much more smoother. However, based on the high resolution, if the number of balls is too much, when rotating, the new window stumbles.}
+
+\item{...}{Any further graphical parameters to be passed to the \code{plot} function.}
 }
 \value{
 An object of the class \code{vennplot} with following components:
 \describe{
-  \item{center}{centers of the circles (columns are (\code{x}, \code{y}) or (\code{x}, \code{y}, \code{z}) coordinates).}
-  \item{semidiameters}{semi-diameters of the circles.}
-  \item{LOSS}{total loss of \code{vennplot}.}
-  \item{weighted.least.square}{Given specific priorities and weights, the weighted least square between input and lay-out.}
+  \item{xy}{centres of the balls (columns are (\code{x}, \code{y}) or (\code{x}, \code{y}, \code{z}) coordinates).}
+  \item{radius}{radii of the balls.}
+  \item{loss}{total loss of \code{vennplot}.}
+  \item{stress}{stress value for solution.}
 }
 }
 \description{
-Draw Venn diagram in 2D or 3D
+Draw Venn and Euler diagram in 2D or 3D
 }
 \details{
-The names of data sets (circles) supplied to \code{combination} must be single letters, e.g., \code{combination = c(A=1, B=2, AB=0.5)}.  Here \code{A} means the whole data-set, so does \code{B}, which means \code{AB} can be no larger than \code{min(A,B)}.
-
-If a few two way intersections are unspecified, \code{mu} gives one way to generate them. For example, Suppose input combinations are \code{c(a=1,b=2,c=1,abc = 0.2)}.  Then default values for the two-way interserctions are  \code{ab = mu^(3-2)*abc = 0.2mu^(3-2)}, and \code{bc = mu^(3-2)*abc = 0.2mu^(3-2), ac = mu^(3-2)*abc = 0.2mu^(3-2)}.
+1. One way sets must be given in \code{disjoint.combination}. e.g.\code{disjoint.combination = c( B=2, AB=0.5)} is not allowed.  \code{disjoint.combination = c(A = 0, B=2, AB=0.5)} works.
+2. Except "NelderMead" and "lineSearch", "goldenSectionSearch" in \code{scaleSearch} and \code{twoWaySearch} is based on \code{\link{optimize}} and the rest methods are based on \code{\link{optim}}.
+3. \code{lower}, \code{upper}, \code{control} and \code{hessian} share the same parameters with \code{\link{optim}}, and \code{lower}, \code{upper} can also be used in \code{\link{optimize}}
 }
-
-
 \examples{
-# arbitray sets
-combinations = c(A=1.8, B=0.9,C=1.3, D = 1.3,E = 1.6, AC=0.3,
-                 AD= 0.3,BE = 0.3, AE = 0.4, f = 0.7,g =0.8,
-                 h = 0.5, gf = 0.2, Bh = 0.1,i = 1,j = 0.4,
-                 k=0.7,l = 1.4,kl = 0.2,m = 0.5,lm = 0.2,
-                 o = 0.8,p = 0.9, op = 0.3)
-ve = vennplot(combinations)
+# 3D Venn plot with arbitray sets
+disjoint.combinations = c(A=80, B=50,C=100, D = 100,E = 100,
+                          "A&C"=30, "A&D"= 30,"B&E" = 30, "A&E" = 40, h = 40, "B&h" = 10)
+ve = vennplot(disjoint.combinations, ThreeD = TRUE)
 
-# named sets
-# combinations = c(A=1, B=1,C=1, ABC = 0.1)
-# ve = vennplot(combinations,NAME = c("Loon","Goose","Duck"))
+# data frame
+vennplot(disjoint.combinations = sharks, vars = c("Au","USA","Fa","Sex"),
+         scaleSearch = "lineSearch", expand = 1.1)
 
-# effect of parameter mu
-# combinations = c(A=1, B=1, C=1, D=1, E=1, ABCDE = 0.1)
-# par(mfrow = c(1,3))
-# ve = vennplot(combinations)
-# ve = vennplot(combinations,mu=2)
-# ve = vennplot(combinations,mu=1.2)
-
-# 3D Venn plot
-combinations = c(A=803, B=304,C=1015, D = 1100,E = 1005,f = 967,H=3020,
-                 CD = 1000,BC = 248,ABC = 185,ADE = 327,CDfH = 846,
-                 I=800, J=760,K=1000, L = 1100,M = 900, IK=333,
-                 JM = 251,IL= 289, KM = 412,JL = 213)
-timestart <- Sys.time()
-ve = vennplot(combinations, disjoint = TRUE,ThreeD = TRUE)
-timeend <- Sys.time()
-runningtime <- timeend-timestart
-print(runningtime)
-
-# effect of parameters priority and weight
-# combinations = c(A = 79,B=29,C=58,AB = 25,AC = 44, BC=18,ABC = 1)
-# par(mfrow = c(2,2))
-# vennplot(combinations, priority = 2)
-# vennplot(combinations, priority = 3)
-# vennplot(combinations, priority = c(2,3), weight = c(30,1000))
-# vennplot(combinations, priority = c(2,3), weight = c(30,10))
-
-# binary data
-# combinations = sharks[,c(1,3:5,8)]
-# vennplot(combinations = combinations)
+}
+\author{
+Zehao Xu and Wayne Oldford
 }
